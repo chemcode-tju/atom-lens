@@ -18,7 +18,7 @@ server = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(server)
 
 host_html = """<!doctype html><html><head><meta charset="utf-8"><title>Structure Viewer — protocol test host</title></head>
-<body style="margin:0"><iframe title="Structure editor" src="/widget" style="border:0;width:100vw;height:100vh"></iframe>
+<body style="margin:0;overflow:hidden"><iframe title="Structure editor" src="/widget" style="display:block;border:0;width:100%;height:100vh"></iframe>
 <script>
 let currentText,etag;
 async function fixture(){if(currentText===undefined){const r=await fetch('/fixture');currentText=await r.text();etag=r.headers.get('ETag');}return currentText;}

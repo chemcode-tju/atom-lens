@@ -1,7 +1,7 @@
 "use strict";
 const $ = id => document.getElementById(id);
 const pending = new Map();
-let nextId = 1, fileRef, resourceMeta = {}, doc, frameIndex = 0, frameData, viewer;
+let nextId = 1, fileRef, resourceMeta = {}, doc, frameIndex = 0, frameData, views;
 let dirty = false, sourceDirty = false, selection = [], timer = null, loading = false, readGeneration = 0;
 let saveInProgress = false, editRevision = 0;
 let previewOnly = false, streamComplete = true;
@@ -14,11 +14,10 @@ function request(method, params) {
     window.parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
   });
 }
-function status(text, error = false) { $("status").textContent = text; $("status").classList.toggle("error", error); }
+function status(text, error = false) { $("status").textContent = error ? text : ""; $("status").hidden = !error; }
 function changed(value = true) {
   dirty = value;
-  $("modified").textContent = dirty || sourceDirty ? "● 未保存" : previewOnly ? "只读预览" : "已保存";
-  $("modified").classList.toggle("dirty", dirty || sourceDirty);
+  $("save").textContent = dirty || sourceDirty ? "保存 *" : "保存";
   $("save").disabled = !(dirty || sourceDirty) || !resourceMeta.writable || saveInProgress;
 }
 function stop() { clearInterval(timer); timer = null; $("play").textContent = "▶"; $("play").setAttribute("aria-label", "播放轨迹"); }
@@ -33,46 +32,28 @@ function updateTimeline() {
   $("timeline").max = doc.count - 1; $("timeline").value = frameIndex; $("timeline").disabled = doc.count < 2;
   $("frame-number").max = doc.count; $("frame-number").value = frameIndex + 1;
   $("frame-count").textContent = `/ ${doc.count}${streamComplete ? "" : "+"}`;
-}
-function point(coords) { return { x: coords[0], y: coords[1], z: coords[2] }; }
-function drawCell(cell) {
-  if (!cell || !$("cell").checked) return;
-  const vertex = mask => point([0, 1, 2].map(j => cell.reduce((sum, v, k) => sum + ((mask >> k) & 1) * v[j], 0)));
-  for (let mask = 0; mask < 8; mask++) for (let k = 0; k < 3; k++) if (!(mask & (1 << k))) {
-    viewer.addLine({ start: vertex(mask), end: vertex(mask | (1 << k)), color: ["#bc6e66", "#4cae98", "#729bdd"][k], linewidth: 1.4 });
-  }
-}
-function ensureViewer() {
-  if (viewer) return;
-  const background = getComputedStyle(document.documentElement).getPropertyValue("--canvas").trim();
-  viewer = $3Dmol.createViewer($("viewer"), { backgroundColor: background, antialias: true });
-  new ResizeObserver(() => { viewer.resize(); viewer.render(); }).observe($("viewer"));
+  const maxTicks = Math.max(2, Math.floor($("ticks").clientWidth / 45));
+  const rough = Math.max(1, (doc.count - 1) / maxTicks);
+  const base = 10 ** Math.floor(Math.log10(rough));
+  const step = [1, 2, 5, 10].find(n => n * base >= rough) * base;
+  const marks = [1];
+  for (let n = step; n < doc.count - step * 0.45; n += step) if (n > 1) marks.push(n);
+  if (doc.count > 1) marks.push(doc.count);
+  $("ticks").replaceChildren(...marks.map(n => {
+    const span = document.createElement("span"); span.textContent = n;
+    span.style.left = `${(n - 1) / Math.max(1, doc.count - 1) * 100}%`;
+    return span;
+  }));
 }
 function render(reset = false) {
   if (!doc) return;
   try {
     frameData = doc.frame(frameIndex);
-    ensureViewer();
-    const previousView = viewer.getView();
-    viewer.removeAllModels(); viewer.removeAllShapes(); viewer.removeAllLabels();
-    let style = $("style").value;
-    if (frameData.atoms.length > 3000 && style !== "sphere") { style = "sphere"; $("style").value = style; status("大结构已切换为原子球显示"); }
-    const xyz = `${frameData.atoms.length}\n\n${frameData.atoms.map(a => `${a.elem} ${a.x} ${a.y} ${a.z}`).join("\n")}\n`;
-    const model = viewer.addModel(xyz, "xyz", { assignBonds: style !== "sphere" });
-    viewer.setStyle({}, style === "sphere" ? { sphere: { scale: 0.34 } } : style === "stick" ? { stick: { radius: 0.16 } } : { sphere: { scale: 0.23 }, stick: { radius: 0.10 } });
-    model.setClickable({}, true, atom => chooseAtom(atom.index));
-    drawCell(frameData.cell);
-    if ($("labels").checked && frameData.atoms.length <= 1000) frameData.atoms.forEach((a, i) => viewer.addLabel(`${a.elem}${i + 1}`, { position: a, fontSize: 10, backgroundOpacity: 0.5, showBackground: true }));
+    if (!views) views = new StructureViews($("viewports"), chooseAtom);
     selection = selection.filter(i => i < frameData.atoms.length);
-    selection.forEach(i => viewer.addLabel(`${frameData.atoms[i].elem} #${i + 1}`, { position: frameData.atoms[i], fontSize: 12, backgroundColor: "#087f8c", backgroundOpacity: 0.9 }));
-    if (reset) { viewer.zoomTo(); viewer.rotate(-20, "x"); viewer.rotate(20, "y"); } else viewer.setView(previousView);
-    viewer.render();
-    $("empty").hidden = true;
+    views.render(frameData, {style: $("style").value, palette: $("palette").value,
+      scale: Number($("radius-scale").value), cell: $("cell").checked, labels: $("labels").checked}, selection, reset);
     updateTimeline();
-    $("summary").textContent = `${frameData.atoms.length} 原子 · ${[...new Set(frameData.atoms.map(a => a.elem))].join(" / ")}`;
-    $("badges").replaceChildren();
-    const flags = frameData.pbc.map(v => v ? "T" : "F").join(" ");
-    for (const text of [`PBC ${flags}`, previewOnly ? "分段预览" : `${doc.count} 帧`]) { const badge = document.createElement("span"); badge.textContent = text; $("badges").append(badge); }
     if (!sourceDirty) $("source").value = doc.frameText(frameIndex);
     $("source-title").textContent = doc.xyz ? `第 ${frameIndex + 1} 帧源码` : "VASP 文件源码";
     updateSelection();
@@ -204,8 +185,14 @@ $("play").onclick = () => {
   timer = setInterval(() => { if (frameIndex + 1 < doc.count || streamComplete) go((frameIndex + 1) % doc.count); }, 1000 / Number($("speed").value));
 };
 $("speed").onchange = () => { if (timer) { stop(); $("play").click(); } };
-$("reset").onclick = () => render(true);
-for (const id of ["style", "cell", "labels"]) $(id).onchange = () => { render(); if (id === "style") status($(id).value === "sphere" ? "原子球显示" : "连线按距离推断；未绘制跨周期边界的键。"); };
+$("reset").onclick = () => views?.fit();
+$("orientation").onchange = event => views?.setOrientation(event.target.value);
+$("layout").onchange = event => views?.setLayout(event.target.value);
+$("expand").onclick = () => views?.toggleExpand();
+for (const mode of ["rotate", "pan", "zoom"]) $(mode).onclick = () => views?.setMode(mode);
+$("first").onclick = () => { stop(); go(0); };
+$("last").onclick = () => { stop(); if (doc) go(doc.count - 1); };
+for (const id of ["style", "palette", "radius-scale", "cell", "labels"]) $(id).onchange = () => render();
 $("source-toggle").onclick = () => { stop(); $("source-panel").hidden = !$("source-panel").hidden; };
 $("source").oninput = () => { sourceDirty = true; editRevision++; changed(dirty); };
 $("apply-source").onclick = applySource;
@@ -218,6 +205,6 @@ $("save").onclick = save;
 $("enable-edit").onclick = () => loadFullFile(fileRef);
 document.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); save(); } });
 window.addEventListener("beforeunload", e => { if (dirty || sourceDirty) { e.preventDefault(); e.returnValue = ""; } });
-request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.2.0" }, appCapabilities: {} })
+request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.3.0" }, appCapabilities: {} })
   .then(() => { send("ui/notifications/initialized", {}); status("已连接，等待文件…"); })
   .catch(error => status(`连接失败：${error.message}`, true));

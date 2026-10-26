@@ -12,6 +12,17 @@
 - 点击“保存”或 Cmd/Ctrl+S，通过宿主文件接口写回；使用 ETag 检查外部修改冲突。
 - 渲染库随插件打包，结构查看和编辑不使用外部服务。
 
+### 视图与外观（0.3.0，本地更新）
+
+- 默认 XZ 正交视图：X 向右、Z 向上。底部可切换 XY、XZ、YZ 和透视视图。
+- 单视图、双视图和四视图；点击面板激活，双击视图标题或点击展开按钮放大当前面板，再次点击恢复。
+- 底部提供旋转、拖动平移、拖动缩放和适应视图按钮，以及帧刻度尺、首尾帧和播放控制。视图操作只移动相机，不修改原子坐标。
+- 固定白色背景。移除常驻状态说明、操作提示、PBC 徽章等小字；失败时显示错误，未保存时保存按钮带 `*`。
+- 默认 Jmol 配色，另提供 RasMol/CPK 和 VESTA。Jmol/RasMol 使用随包发布的 3Dmol 元素表；VESTA 使用 [OVITO 官方提供的 VESTA 主题](https://www.ovito.org/download/data/documentation/VESTA.ovito-theme)，不套用 VESTA 半径。
+- 原子球使用 OVITO 3.15.5 元素显示半径表（通过本地 Python API 导入标准元素获取），例如 H 0.46、C 0.77、O 0.74、Cu 1.28 Å；可统一调为 75% / 100% / 125%。这是显示半径，不是统一缩放的范德华半径，参见 [OVITO 粒子设置](https://www.ovito.org/manual/reference/app_settings/particle_settings.html)。缺失半径回退到 1.2 Å，缺失配色回退到 Jmol。
+
+此次仅更新本地安装，nd3 保持 0.2.0。无需为开发测试重启正在使用的 Codex；现有原生面板可能仍缓存旧版 UI，可在方便时重新打开面板或重启后确认。
+
 ## 安装
 
 需要支持 MCP Apps 文件入口的新版 Codex 桌面端，以及 `python3`（3.9 或以上）。插件服务只使用 Python 标准库；运行插件不需要 ASE、Node.js 或 npm。
@@ -47,7 +58,7 @@ XYZ/extxyz 首次只读取一个完整帧，后续每批最多 32 帧或约 256 
 
 **当前宿主的入口按扩展名匹配。**裸文件名 `POSCAR`、`CONTCAR`、`XDATCAR` 虽然解析器可以读取，但尚不能靠这个入口自动关联；测试时使用 `structure.poscar`、`trajectory.xdatcar` 等带扩展名的副本。VASP 4 缺少元素名时明确报错，不猜测元素。
 
-编辑不会重新运行计算。改变坐标后，原有能量、力、应力等标签仍被保留，但可能已不适用于新结构；将编辑结构用于训练前须重新计算标签。界面会显示此提示。
+编辑不会重新运行计算。改变坐标后，原有能量、力、应力等标签仍被保留，但可能已不适用于新结构；将编辑结构用于训练前须重新计算标签。
 
 测量目前显示两原子的**直接距离**，未实现周期最短距离。球棍连线按距离推断，不包含跨周期边界的键。XDATCAR 首版仅覆盖固定晶胞；大文件仍受宿主读写大小上限和内存限制。保存前请确认未保存标记已消失，避免关闭面板丢失草稿。
 
@@ -55,6 +66,7 @@ XYZ/extxyz 首次只读取一个完整帧，后续每批最多 32 帧或约 256 
 
 ```sh
 node tests/test_parser.cjs
+node tests/test_viewport.cjs
 python3 tests/test_server.py
 python3 tests/test_trajectory.py
 ```
@@ -74,12 +86,16 @@ conda run -n work python tests/validate_real_data.py
 
 nd3 实测原轨迹大小 12,543,132 字节，第一帧只读取 23,889 字节；全部 800 帧共 50 批，重组内容的 SHA-256 与原文件一致。本地与 nd3 的新 app-server 均已发现 0.2.0 的文件入口和分段读取工具，无启动错误。后端验证不代替远程原生侧栏交互验证。
 
+0.3.0 本地协议测试页已验证：XZ 默认取景、四视图及高晶胞完整显示、双击 YZ 面板展开、平移拖动、三种配色及球棍/线棒切换、首尾帧跳转，以及 540 px 侧栏布局。新增方向投影测试覆盖 XZ 的 X 向右/Z 向上、YZ 的 Y 向左/Z 向上，防止相机矩阵方向混淆造成晶胞裁切。按用户要求不重启 Codex，不更新 nd3，原生窗口中的新版 UI 待方便时确认。
+
 ## 目录
 
 - `plugin/server.py`：MCP STDIO 入口、工具声明与内嵌 UI 资源。
 - `plugin/trajectory.py`：仅对宿主选中文件执行有大小限制的分段读取与版本检查。
 - `plugin/web/parser.js`：原文保留与按帧坐标解析。
 - `plugin/web/app.js`：交互、渲染、宿主读写协议。
+- `plugin/web/viewport.js`：多视图、正交取景、相机控制。
+- `plugin/web/appearance.js`：元素配色与显示半径数据。
 - `.agents/plugins/marketplace.json`：可安装的本地插件市场。
 - `examples/water.xyz`：可公开的两帧小样例。
 

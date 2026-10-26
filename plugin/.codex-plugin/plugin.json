@@ -1,6 +1,6 @@
 {
   "name": "structure-viewer",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Open XYZ and extxyz atomic structures directly in the Codex side panel, scrub trajectories, and edit files.",
   "author": {"name": "liyang-tju"},
   "license": "MIT",

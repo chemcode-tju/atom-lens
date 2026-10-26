@@ -2,13 +2,25 @@
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Structure Viewer</title><style>/*__STYLE__*/</style></head>
 <body>
 <main>
-  <header><div><div class="eyebrow">STRUCTURE VIEWER <span>0.2</span></div><h1 id="filename">等待打开结构文件</h1></div><button id="save" disabled>保存</button></header>
-  <div class="toolbar"><select id="style" aria-label="显示方式"><option value="sphere">原子球</option><option value="ballstick">球棍</option><option value="stick">线棒</option></select><label><input id="cell" type="checkbox" checked>晶胞</label><label><input id="labels" type="checkbox">序号</label><button id="reset">适应视图</button><button id="source-toggle">源码</button><button id="enable-edit" hidden>启用编辑</button></div>
-  <div id="status" role="status">正在连接 Codex 文件接口…</div>
-  <section class="stage"><div id="viewer" aria-label="交互式原子结构"></div><div id="badges"></div><div class="gesture">拖动旋转 · 滚轮缩放 · 点击选择原子</div><div id="empty">在 Codex 中打开 .extxyz 或 .xyz 文件</div></section>
-  <section id="atom-panel" hidden><div class="section-head"><strong id="atom-title">原子</strong><span id="distance"></span></div><div class="coordinates"><label>X <input id="coord-x" type="number" step="0.01"></label><label>Y <input id="coord-y" type="number" step="0.01"></label><label>Z <input id="coord-z" type="number" step="0.01"></label><button id="apply-atom">应用</button></div><div class="hint">坐标单位 Å；已有能量和力不会随坐标修改而重新计算。</div></section>
+  <header><h1 id="filename">Structure Viewer</h1><div class="file-actions"><button id="enable-edit" hidden>启用编辑</button><button id="source-toggle">源码</button><button id="save" disabled>保存</button></div></header>
+  <div class="toolbar">
+    <select id="style" aria-label="显示方式"><option value="sphere">原子球</option><option value="ballstick">球棍</option><option value="stick">线棒</option></select>
+    <select id="palette" aria-label="原子配色"><option value="jmol">Jmol</option><option value="rasmol">RasMol / CPK</option><option value="vesta">VESTA</option></select>
+    <select id="radius-scale" aria-label="原子半径比例" title="原子半径比例"><option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.25">125%</option></select>
+    <label><input id="cell" type="checkbox" checked>晶胞</label><label><input id="labels" type="checkbox">序号</label>
+  </div>
+  <div id="status" role="alert" hidden></div>
+  <div id="viewports" class="viewports" data-layout="single" data-mode="rotate"></div>
+  <section id="atom-panel" hidden><div class="section-head"><strong id="atom-title">原子</strong><span id="distance"></span></div><div class="coordinates"><label>X <input id="coord-x" type="number" step="0.01"></label><label>Y <input id="coord-y" type="number" step="0.01"></label><label>Z <input id="coord-z" type="number" step="0.01"></label><button id="apply-atom">应用</button></div></section>
   <section id="source-panel" hidden><div class="section-head"><strong id="source-title">当前帧源码</strong><button id="apply-source">应用源码</button></div><textarea id="source" spellcheck="false" aria-label="当前结构源码"></textarea></section>
-  <footer><div class="timeline-head"><div class="playback"><button id="previous" aria-label="上一帧">‹</button><button id="play" aria-label="播放轨迹">▶</button><button id="next" aria-label="下一帧">›</button></div><div class="frame-label"><input id="frame-number" type="number" min="1" value="1" aria-label="帧号"><span id="frame-count">/ —</span></div><select id="speed" aria-label="播放速度"><option value="2">2 帧/秒</option><option value="5" selected>5 帧/秒</option><option value="10">10 帧/秒</option></select></div><input id="timeline" type="range" min="0" max="0" value="0" aria-label="轨迹帧滑块" disabled><div class="timeline-foot"><span id="summary">—</span><span id="modified">未修改</span></div></footer>
+  <footer>
+    <div class="timeline-row"><div class="frame-label"><input id="frame-number" type="number" min="1" value="1" aria-label="帧号"><span id="frame-count">/ —</span></div><div class="ruler"><div id="ticks" aria-hidden="true"></div><input id="timeline" type="range" min="0" max="0" value="0" aria-label="轨迹帧滑块" disabled></div></div>
+    <div class="control-row">
+      <div class="playback"><button id="first" aria-label="第一帧" title="第一帧">|◀</button><button id="previous" aria-label="上一帧" title="上一帧">◀</button><button id="play" aria-label="播放轨迹" title="播放 / 暂停">▶</button><button id="next" aria-label="下一帧" title="下一帧">▶</button><button id="last" aria-label="最后一帧" title="最后一帧">▶|</button><select id="speed" aria-label="播放速度"><option value="2">2 fps</option><option value="5" selected>5 fps</option><option value="10">10 fps</option></select></div>
+      <div class="view-controls"><select id="orientation" aria-label="视图方向"><option value="xz" selected>Front · XZ</option><option value="xy">Top · XY</option><option value="yz">Left · YZ</option><option value="perspective">Perspective</option></select><select id="layout" aria-label="视图布局"><option value="single">单视图</option><option value="dual">双视图</option><option value="quad">四视图</option></select></div>
+      <div class="navigation" role="group" aria-label="视图操作"><button id="rotate" data-mode-button="rotate" aria-label="旋转" title="旋转" aria-pressed="true">⟳</button><button id="pan" data-mode-button="pan" aria-label="平移" title="平移" aria-pressed="false">✥</button><button id="zoom" data-mode-button="zoom" aria-label="缩放" title="缩放" aria-pressed="false">⌕</button><button id="reset" aria-label="适应视图" title="适应视图">⊡</button><button id="expand" aria-label="展开当前视图" title="展开 / 恢复多视图">⛶</button></div>
+    </div>
+  </footer>
 </main>
-<script>/*__3DMOL__*/</script><script>/*__PARSER__*/</script><script>/*__APP__*/</script>
+<script>/*__3DMOL__*/</script><script>/*__PARSER__*/</script><script>/*__APPEARANCE__*/</script><script>/*__VIEWPORT__*/</script><script>/*__APP__*/</script>
 </body></html>

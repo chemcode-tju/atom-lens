@@ -1,7 +1,7 @@
 """Dependency-free MCP server for the native Codex file-editor entrypoint."""
 
 # Configuration
-plugin_version = "0.2.0"
+plugin_version = "0.3.0"
 resource_uri = "ui://structure-viewer/editor.html"
 
 from pathlib import Path
@@ -22,6 +22,8 @@ def widget_html() -> str:
         ("/*__STYLE__*/", "style.css"),
         ("/*__3DMOL__*/", "vendor/3Dmol-min.js"),
         ("/*__PARSER__*/", "parser.js"),
+        ("/*__APPEARANCE__*/", "appearance.js"),
+        ("/*__VIEWPORT__*/", "viewport.js"),
         ("/*__APP__*/", "app.js"),
     ]:
         asset = (plugin_root / "web" / filename).read_text()
