@@ -2,7 +2,8 @@
   "mcpServers": {
     "structure-viewer": {
       "command": "python3",
-      "args": ["${PLUGIN_ROOT}/server.py"]
+      "args": ["server.py"],
+      "cwd": "."
     }
   }
 }

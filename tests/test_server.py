@@ -30,7 +30,9 @@ class ServerTests(unittest.TestCase):
             {"jsonrpc": "2.0", "method": "notifications/initialized"},
             {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
         ]
-        result = subprocess.run([sys.executable, str(root / "plugin/server.py")],
+        config = json.loads((root / "plugin/.mcp.json").read_text())["mcpServers"]["structure-viewer"]
+        result = subprocess.run([config["command"], *config["args"]],
+                                cwd=root / "plugin" / config["cwd"],
                                 input="\n".join(json.dumps(r) for r in requests) + "\n",
                                 text=True, capture_output=True, check=True)
         replies = [json.loads(line) for line in result.stdout.splitlines()]
