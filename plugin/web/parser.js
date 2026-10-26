@@ -149,7 +149,20 @@
     }
     serialize() { return this.lines.join(this.newline); }
   }
-  const api = { StructureDocument, attributes, columns, elements };
+  class ProgressiveXYZDocument {
+    constructor(name) { this.name = name; this.xyz = true; this.frames = []; this.parts = []; }
+    get count() { return this.frames.length; }
+    append(text) {
+      if (!text.trim()) { this.parts.push(text); return; }
+      const chunk = new StructureDocument(this.name, text);
+      for (let index = 0; index < chunk.count; index++) this.frames.push({ chunk, index });
+      this.parts.push(text);
+    }
+    frame(index) { const ref = this.frames[index]; return ref.chunk.frame(ref.index); }
+    frameText(index) { const ref = this.frames[index]; return ref.chunk.frameText(ref.index); }
+    serialize() { return this.parts.join(""); }
+  }
+  const api = { StructureDocument, ProgressiveXYZDocument, attributes, columns, elements };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.StructureParser = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

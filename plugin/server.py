@@ -1,13 +1,16 @@
 """Dependency-free MCP server for the native Codex file-editor entrypoint."""
 
 # Configuration
-plugin_version = "0.1.1"
+plugin_version = "0.2.0"
 resource_uri = "ui://structure-viewer/editor.html"
 
 from pathlib import Path
 from typing import Any
 import json
 import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from trajectory import read_frames
 
 plugin_root = Path(__file__).resolve().parent
 
@@ -45,7 +48,7 @@ def tool_descriptor() -> dict[str, Any]:
 
 
 def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
-    """Only serve UI and echo the opaque file reference; host owns all file I/O."""
+    """Serve the UI and bounded reads; writes still go through the native host."""
     if method == "initialize":
         return {"protocolVersion": params.get("protocolVersion", "2025-11-25"),
                 "capabilities": {"tools": {}, "resources": {}},
@@ -53,7 +56,16 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
     if method in {"ping", "resources/subscribe", "resources/unsubscribe"}:
         return {}
     if method == "tools/list":
-        return {"tools": [tool_descriptor()]}
+        return {"tools": [tool_descriptor(), {
+            "name": "read_trajectory_frames", "title": "Read trajectory frames",
+            "description": "Read a bounded batch of complete XYZ frames from the host-selected file.",
+            "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
+                "offset": {"type": "integer", "minimum": 0},
+                "frameLimit": {"type": "integer", "minimum": 1, "maximum": 32},
+                "version": {"type": "string"}}},
+            "annotations": {"readOnlyHint": True, "openWorldHint": False},
+            "_meta": {"ui": {"visibility": ["app"]}},
+        }]}
     if method == "resources/list":
         return {"resources": [{"uri": resource_uri, "name": "Atomic structure editor",
                                "mimeType": "text/html;profile=mcp-app"}]}
@@ -70,6 +82,10 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("A host-provided file name and resource URI are required.")
         return {"content": [{"type": "text", "text": f"Opening {file['name']}"}],
                 "structuredContent": {"file": file}}
+    if method == "tools/call" and params.get("name") == "read_trajectory_frames":
+        batch = read_frames(params)
+        return {"content": [{"type": "text", "text": f"Read {batch.get('frameCount', 0)} frames"}],
+                "structuredContent": batch}
     raise ValueError(f"Unsupported method or resource: {method}")
 
 

@@ -4,6 +4,7 @@ const pending = new Map();
 let nextId = 1, fileRef, resourceMeta = {}, doc, frameIndex = 0, frameData, viewer;
 let dirty = false, sourceDirty = false, selection = [], timer = null, loading = false, readGeneration = 0;
 let saveInProgress = false, editRevision = 0;
+let previewOnly = false, streamComplete = true;
 function send(method, params) { window.parent.postMessage({ jsonrpc: "2.0", method, params }, "*"); }
 function request(method, params) {
   const id = nextId++;
@@ -16,11 +17,23 @@ function request(method, params) {
 function status(text, error = false) { $("status").textContent = text; $("status").classList.toggle("error", error); }
 function changed(value = true) {
   dirty = value;
-  $("modified").textContent = dirty || sourceDirty ? "● 未保存" : "已保存";
+  $("modified").textContent = dirty || sourceDirty ? "● 未保存" : previewOnly ? "只读预览" : "已保存";
   $("modified").classList.toggle("dirty", dirty || sourceDirty);
   $("save").disabled = !(dirty || sourceDirty) || !resourceMeta.writable || saveInProgress;
 }
 function stop() { clearInterval(timer); timer = null; $("play").textContent = "▶"; $("play").setAttribute("aria-label", "播放轨迹"); }
+function editingMode(preview) {
+  previewOnly = preview;
+  $("enable-edit").hidden = !preview;
+  $("source").readOnly = preview;
+  $("apply-source").disabled = preview;
+}
+function updateTimeline() {
+  if (!doc) return;
+  $("timeline").max = doc.count - 1; $("timeline").value = frameIndex; $("timeline").disabled = doc.count < 2;
+  $("frame-number").max = doc.count; $("frame-number").value = frameIndex + 1;
+  $("frame-count").textContent = `/ ${doc.count}${streamComplete ? "" : "+"}`;
+}
 function point(coords) { return { x: coords[0], y: coords[1], z: coords[2] }; }
 function drawCell(cell) {
   if (!cell || !$("cell").checked) return;
@@ -55,13 +68,11 @@ function render(reset = false) {
     if (reset) { viewer.zoomTo(); viewer.rotate(-20, "x"); viewer.rotate(20, "y"); } else viewer.setView(previousView);
     viewer.render();
     $("empty").hidden = true;
-    $("timeline").max = doc.count - 1; $("timeline").value = frameIndex; $("timeline").disabled = doc.count < 2;
-    $("frame-number").max = doc.count; $("frame-number").value = frameIndex + 1;
-    $("frame-count").textContent = `/ ${doc.count}`;
+    updateTimeline();
     $("summary").textContent = `${frameData.atoms.length} 原子 · ${[...new Set(frameData.atoms.map(a => a.elem))].join(" / ")}`;
     $("badges").replaceChildren();
     const flags = frameData.pbc.map(v => v ? "T" : "F").join(" ");
-    for (const text of [`PBC ${flags}`, `${doc.count} 帧`]) { const badge = document.createElement("span"); badge.textContent = text; $("badges").append(badge); }
+    for (const text of [`PBC ${flags}`, previewOnly ? "分段预览" : `${doc.count} 帧`]) { const badge = document.createElement("span"); badge.textContent = text; $("badges").append(badge); }
     if (!sourceDirty) $("source").value = doc.frameText(frameIndex);
     $("source-title").textContent = doc.xyz ? `第 ${frameIndex + 1} 帧源码` : "VASP 文件源码";
     updateSelection();
@@ -72,14 +83,15 @@ function updateSelection() {
   if (!selection.length) return;
   const index = selection[selection.length - 1], atom = frameData.atoms[index];
   $("atom-title").textContent = `${atom.elem} · 原子 ${index + 1}`;
-  ["x", "y", "z"].forEach(key => { $("coord-" + key).value = atom[key].toFixed(6); $("coord-" + key).disabled = !doc.xyz; });
-  $("apply-atom").disabled = !doc.xyz;
+  ["x", "y", "z"].forEach(key => { $("coord-" + key).value = atom[key].toFixed(6); $("coord-" + key).disabled = !doc.xyz || previewOnly; });
+  $("apply-atom").disabled = !doc.xyz || previewOnly;
   $("distance").textContent = selection.length === 2 ? `直接距离 ${Math.hypot(...["x", "y", "z"].map(k => frameData.atoms[selection[0]][k] - atom[k])).toFixed(4)} Å` : "";
 }
 function chooseAtom(index) {
   stop(); selection = selection.includes(index) ? selection.filter(i => i !== index) : [...selection.slice(-1), index]; render();
 }
 function applySource() {
+  if (previewOnly) return !sourceDirty;
   if (!sourceDirty) return true;
   try {
     const replacement = doc.replaceFrame(frameIndex, $("source").value);
@@ -95,9 +107,46 @@ function go(index) {
   frameIndex = Math.max(0, Math.min(doc.count - 1, Number(index) || 0)); selection = []; render();
 }
 async function loadFile(file, reload = false) {
-  if (!file?.resourceUri || loading || (!reload && fileRef?.resourceUri === file.resourceUri && doc)) return;
+  if (!file?.resourceUri || (!reload && fileRef?.resourceUri === file.resourceUri && (doc || loading))) return;
+  if (!/\.(extxyz|xyz)$/i.test(file.name)) return loadFullFile(file);
+  const generation = ++readGeneration;
+  stop(); loading = true; streamComplete = false;
+  fileRef = file; doc = null; resourceMeta = {}; frameIndex = 0; selection = []; sourceDirty = false;
+  editingMode(true); changed(false);
+  $("filename").textContent = file.name; status("正在读取第一帧…");
+  let offset = 0, version;
+  try {
+    while (generation === readGeneration) {
+      const result = await request("tools/call", { name: "read_trajectory_frames", arguments: {
+        offset, frameLimit: offset === 0 ? 1 : 32, ...(version ? { version } : {})
+      } });
+      if (generation !== readGeneration) return;
+      if (result.isError) throw Error(result.content?.find(c => c.text)?.text || "分段读取失败");
+      const batch = result.structuredContent;
+      if (batch?.supported === false && offset === 0) return loadFullFile(file);
+      if (!batch || typeof batch.text !== "string" || !Number.isInteger(batch.nextOffset) || batch.nextOffset < offset || (!batch.eof && batch.nextOffset === offset)) throw Error("分段读取返回无效数据");
+      const first = !doc;
+      if (first) doc = new StructureParser.ProgressiveXYZDocument(file.name);
+      doc.append(batch.text);
+      if (first && !doc.count) throw Error("没有有效结构帧");
+      streamComplete = batch.eof; offset = batch.nextOffset; version = batch.version;
+      if (first) { doc.frame(0); render(true); request("resources/subscribe", { uri: file.resourceUri }).catch(() => {}); }
+      else updateTimeline();
+      const percent = batch.totalBytes ? Math.floor(offset / batch.totalBytes * 100) : 100;
+      status(streamComplete ? `${doc.count} 帧已加载 · 点击“启用编辑”可修改文件` : `已加载 ${doc.count} 帧 · ${percent}% · 可拖动已加载部分`);
+      if (streamComplete) break;
+      // Yield to input and paint before requesting the next bounded batch.
+      await new Promise(resolve => setTimeout(resolve, 40));
+    }
+  } catch (error) {
+    if (generation === readGeneration) { stop(); status(`加载停止：${error.message}${doc?.count ? `（保留已加载的 ${doc.count} 帧）` : ""}`, true); }
+  } finally { if (generation === readGeneration) loading = false; }
+}
+async function loadFullFile(file) {
+  if (!file?.resourceUri) return;
   loading = true; const generation = ++readGeneration; stop();
-  fileRef = file; $("filename").textContent = file.name; status("正在读取结构与轨迹索引…");
+  fileRef = file; $("filename").textContent = file.name; status("正在读取完整文件与保存版本，请稍候…");
+  $("enable-edit").disabled = true;
   try {
     const result = await request("resources/read", { uri: file.resourceUri, _meta: { "openai/resource": { representation: "text" } } });
     if (generation !== readGeneration) return;
@@ -108,11 +157,12 @@ async function loadFile(file, reload = false) {
     if (typeof text !== "string") throw Error("文件超过宿主读取限制或不是文本文件");
     const parsed = new StructureParser.StructureDocument(file.name, text); parsed.frame(0);
     doc = parsed; resourceMeta = content._meta?.["openai/resource"] || {};
+    streamComplete = true; editingMode(false);
     frameIndex = Math.min(frameIndex, doc.count - 1); selection = []; sourceDirty = false; changed(false); render(true);
     status(`${doc.count} 帧已加载 · ${resourceMeta.writable ? "可以编辑保存" : "宿主只读"} · ${$("style").value === "sphere" ? "原子球显示" : "连线按距离推断"}`);
     request("resources/subscribe", { uri: file.resourceUri }).catch(() => {});
-  } catch (error) { status(`打开失败：${error.message}`, true); }
-  finally { loading = false; }
+  } catch (error) { if (generation === readGeneration) status(`完整读取失败：${error.message}`, true); }
+  finally { if (generation === readGeneration) { loading = false; $("enable-edit").disabled = false; } }
 }
 async function save() {
   if (!doc || !resourceMeta.writable || saveInProgress || !applySource()) return;
@@ -151,7 +201,7 @@ $("play").onclick = () => {
   if (timer) return stop();
   if (!doc || doc.count < 2 || !applySource()) return;
   $("play").textContent = "Ⅱ"; $("play").setAttribute("aria-label", "暂停轨迹");
-  timer = setInterval(() => go((frameIndex + 1) % doc.count), 1000 / Number($("speed").value));
+  timer = setInterval(() => { if (frameIndex + 1 < doc.count || streamComplete) go((frameIndex + 1) % doc.count); }, 1000 / Number($("speed").value));
 };
 $("speed").onchange = () => { if (timer) { stop(); $("play").click(); } };
 $("reset").onclick = () => render(true);
@@ -160,13 +210,14 @@ $("source-toggle").onclick = () => { stop(); $("source-panel").hidden = !$("sour
 $("source").oninput = () => { sourceDirty = true; editRevision++; changed(dirty); };
 $("apply-source").onclick = applySource;
 $("apply-atom").onclick = () => {
-  if (!doc || !selection.length || !applySource()) return;
+  if (!doc || previewOnly || !selection.length || !applySource()) return;
   try { doc.updateAtom(frameIndex, selection[selection.length - 1], ["x", "y", "z"].map(key => $("coord-" + key).value)); editRevision++; changed(); render(); status("坐标已修改；已有能量和力未重算。点击保存写回文件。"); }
   catch (error) { status(error.message, true); }
 };
 $("save").onclick = save;
+$("enable-edit").onclick = () => loadFullFile(fileRef);
 document.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); save(); } });
 window.addEventListener("beforeunload", e => { if (dirty || sourceDirty) { e.preventDefault(); e.returnValue = ""; } });
-request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.1.1" }, appCapabilities: {} })
+request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.2.0" }, appCapabilities: {} })
   .then(() => { send("ui/notifications/initialized", {}); status("已连接，等待文件…"); })
   .catch(error => status(`连接失败：${error.message}`, true));

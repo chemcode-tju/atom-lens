@@ -3,12 +3,14 @@
 # Configuration
 fixture_file = "test-data/train.extxyz"
 port = 8767
+batch_delay_seconds = 0.2
 
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import hashlib
 import importlib.util
 import json
+import time
 
 root = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("viewer_server", root / "plugin/server.py")
@@ -29,6 +31,10 @@ addEventListener('message',async event=>{
  let result={};try{
  if(m.method==='ui/initialize')result={protocolVersion:'2026-01-26',hostInfo:{name:'Protocol test host',version:'1'},hostCapabilities:{experimental:{'openai/resource':{}}},hostContext:{displayMode:'fullscreen'}};
  else if(m.method==='resources/read')result={contents:[{uri:'codex-resource://test-fixture',text:await fixture(),_meta:{'openai/resource':{etag,writable:true}}}]};
+ else if(m.method==='tools/call'){
+   const r=await fetch('/tools',{method:'POST',body:JSON.stringify(m.params)});
+   if(!r.ok)throw Error(await r.text());result=await r.json();
+ }
  else if(m.method==='openai/resources/write'){
    if(m.params.ifMatch!==etag)result={outcome:'conflict',etag};
    else {const r=await fetch('/save',{method:'POST',body:m.params.text});if(!r.ok)throw Error(await r.text());currentText=m.params.text;etag=r.headers.get('ETag');result={outcome:'saved',etag};}
@@ -59,6 +65,18 @@ class TestHost(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self) -> None:
+        if self.path == "/tools":
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                if length > 65536:
+                    raise ValueError("Request too large")
+                params = json.loads(self.rfile.read(length))
+                params["_meta"] = {"openai/resource": {"path": str(root / fixture_file)}}
+                time.sleep(batch_delay_seconds)
+                self.reply(json.dumps(server.dispatch("tools/call", params)).encode(), "application/json")
+            except Exception as error:
+                self.send_error(400, str(error))
+            return
         if self.path != "/save":
             self.send_error(404)
             return
