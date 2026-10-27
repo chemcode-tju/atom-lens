@@ -68,7 +68,7 @@ class TestHost(BaseHTTPRequestHandler):
         if self.path == "/tools":
             try:
                 length = int(self.headers.get("Content-Length", 0))
-                if length > 65536:
+                if length > 24 * 1048576:
                     raise ValueError("Request too large")
                 params = json.loads(self.rfile.read(length))
                 params["_meta"] = {"openai/resource": {"path": str(root / fixture_file)}}

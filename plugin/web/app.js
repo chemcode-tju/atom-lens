@@ -4,7 +4,19 @@ const pending = new Map();
 let nextId = 1, fileRef, resourceMeta = {}, doc, frameIndex = 0, frameData, views;
 let dirty = false, sourceDirty = false, selection = [], timer = null, loading = false, readGeneration = 0;
 let saveInProgress = false, editRevision = 0;
-let previewOnly = false, streamComplete = true;
+let previewOnly = false, streamComplete = true, binaryTrajectory = false, pickedFile = false;
+let anchor = null, paintTicket = 0, snapshotTicket = 0, snapshotData = null;
+let playback = {fps:60, speed:1, step:1, loop:true};
+function afterPaint(callback) { requestAnimationFrame(() => setTimeout(callback, 0)); }
+function scheduleRender(reset = false) { const ticket=++paintTicket; afterPaint(() => { if(ticket===paintTicket)render(reset); }); }
+function clearFollow() { anchor=null; $("follow").checked=false; }
+function setFollow(index) {
+  if(!doc)return;
+  const frame=doc.frame(frameIndex),atom=frame.atoms[index];
+  if(!atom) { status("原子序号超出范围",true); return; }
+  anchor={index,id:atom.id,element:atom.elem,signature:frame.atoms.map(a=>a.elem).join(',')};
+  $("follow").checked=true;$("follow-number").value=index+1;render();
+}
 function send(method, params) { window.parent.postMessage({ jsonrpc: "2.0", method, params }, "*"); }
 function request(method, params) {
   const id = nextId++;
@@ -20,7 +32,7 @@ function changed(value = true) {
   $("save").textContent = dirty || sourceDirty ? "保存 *" : "保存";
   $("save").disabled = !(dirty || sourceDirty) || !resourceMeta.writable || saveInProgress;
 }
-function stop() { clearInterval(timer); timer = null; $("play").textContent = "▶"; $("play").setAttribute("aria-label", "播放轨迹"); }
+function stop() { cancelAnimationFrame(timer); timer = null; $("play").textContent = "▶"; $("play").setAttribute("aria-label", "播放轨迹"); }
 function editingMode(preview) {
   previewOnly = preview;
   $("enable-edit").hidden = !preview;
@@ -51,10 +63,12 @@ function render(reset = false) {
     frameData = doc.frame(frameIndex);
     if (!views) views = new StructureViews($("viewports"), chooseAtom);
     selection = selection.filter(i => i < frameData.atoms.length);
-    views.render(frameData, {style: $("style").value, palette: $("palette").value,
-      scale: Number($("radius-scale").value), cell: $("cell").checked, labels: $("labels").checked}, selection, reset);
+    const displayed = $("wrap").checked ? StructureGeometry.wrap(frameData) : frameData;
+    const follow = $("follow").checked ? StructureGeometry.followAtom(displayed, anchor) : null;
+    views.render(displayed, {style: $("style").value, palette: $("palette").value,
+      scale: Number($("radius-scale").value), cell: $("cell").checked, labels: $("labels").checked, hbonds: $("hbonds").checked, lighting: true, follow}, selection, reset);
     updateTimeline();
-    if (!sourceDirty) $("source").value = doc.frameText(frameIndex);
+    if (!sourceDirty && !$("source-panel").hidden) $("source").value = doc.frameText(frameIndex);
     $("source-title").textContent = doc.xyz ? `第 ${frameIndex + 1} 帧源码` : "VASP 文件源码";
     updateSelection();
   } catch (error) { stop(); status(error.message, true); }
@@ -85,15 +99,19 @@ function applySource() {
 }
 function go(index) {
   if (!doc || !applySource()) return;
-  frameIndex = Math.max(0, Math.min(doc.count - 1, Number(index) || 0)); selection = []; render();
+  const target = Math.max(0, Math.min(doc.count - 1, Number(index) || 0));
+  try { if($("follow").checked)StructureGeometry.followAtom(doc.frame(target),anchor); }
+  catch(error){stop();status(error.message,true);return;}
+  frameIndex=target;selection=[];status("");render();
 }
 async function loadFile(file, reload = false) {
   if (!file?.resourceUri || (!reload && fileRef?.resourceUri === file.resourceUri && (doc || loading))) return;
-  if (!/\.(extxyz|xyz)$/i.test(file.name)) return loadFullFile(file);
+  pickedFile=false; binaryTrajectory=/\.traj$/i.test(file.name); clearFollow();
+  if (!/\.(extxyz|xyz|traj)$/i.test(file.name)) { frameIndex=0; return loadFullFile(file); }
   const generation = ++readGeneration;
   stop(); loading = true; streamComplete = false;
   fileRef = file; doc = null; resourceMeta = {}; frameIndex = 0; selection = []; sourceDirty = false;
-  editingMode(true); changed(false);
+  editingMode(true); $("enable-edit").hidden = binaryTrajectory; $("source-toggle").hidden = binaryTrajectory; $("source-panel").hidden = true; changed(false);
   $("filename").textContent = file.name; status("正在读取第一帧…");
   let offset = 0, version;
   try {
@@ -107,7 +125,7 @@ async function loadFile(file, reload = false) {
       if (batch?.supported === false && offset === 0) return loadFullFile(file);
       if (!batch || typeof batch.text !== "string" || !Number.isInteger(batch.nextOffset) || batch.nextOffset < offset || (!batch.eof && batch.nextOffset === offset)) throw Error("分段读取返回无效数据");
       const first = !doc;
-      if (first) doc = new StructureParser.ProgressiveXYZDocument(file.name);
+      if (first) doc = new StructureParser.ProgressiveXYZDocument(binaryTrajectory ? "preview.extxyz" : file.name);
       doc.append(batch.text);
       if (first && !doc.count) throw Error("没有有效结构帧");
       streamComplete = batch.eof; offset = batch.nextOffset; version = batch.version;
@@ -125,7 +143,9 @@ async function loadFile(file, reload = false) {
 }
 async function loadFullFile(file) {
   if (!file?.resourceUri) return;
+  if (/\.traj$/i.test(file.name)) { status("当前宿主不支持轨迹分段读取，请使用“打开”选择本地 .traj 文件", true); return; }
   loading = true; const generation = ++readGeneration; stop();
+  $("source-toggle").hidden=false;
   fileRef = file; $("filename").textContent = file.name; status("正在读取完整文件与保存版本，请稍候…");
   $("enable-edit").disabled = true;
   try {
@@ -181,19 +201,47 @@ $("next").onclick = () => { stop(); go(frameIndex + 1); };
 $("play").onclick = () => {
   if (timer) return stop();
   if (!doc || doc.count < 2 || !applySource()) return;
+  if(frameIndex===doc.count-1 && streamComplete)go(0);
   $("play").textContent = "Ⅱ"; $("play").setAttribute("aria-label", "暂停轨迹");
-  timer = setInterval(() => { if (frameIndex + 1 < doc.count || streamComplete) go((frameIndex + 1) % doc.count); }, 1000 / Number($("speed").value));
+  let previous=performance.now(), accumulator=0;
+  const tick=now=>{
+    if(timer===null)return;
+    accumulator+=Math.min(now-previous,250)*playback.fps*playback.speed/1000;previous=now;
+    const steps=Math.floor(accumulator);
+    if(steps>0){
+      accumulator-=steps;
+      let target=frameIndex+steps*playback.step;
+      if(target>=doc.count){
+        if(!streamComplete){target=doc.count-1;accumulator=0;}
+        else if(playback.loop)target%=doc.count;
+        else {go(doc.count-1);stop();return;}
+      }
+      if(target!==frameIndex)go(target);
+    }
+    if(timer!==null)timer=requestAnimationFrame(tick);
+  };
+  timer=requestAnimationFrame(tick);
 };
-$("speed").onchange = () => { if (timer) { stop(); $("play").click(); } };
+$("playback-settings").onclick=()=>{
+  stop();$("animation-fps").value=playback.fps;$("playback-speed").value=playback.speed;
+  $("playback-step").value=playback.step;$("playback-loop").checked=playback.loop;$("playback-dialog").showModal();
+};
+$("playback-apply").onclick=event=>{
+  if(!$("playback-dialog").querySelector('form').reportValidity()){event.preventDefault();return;}
+  playback={fps:Number($("animation-fps").value),speed:Number($("playback-speed").value),step:Number($("playback-step").value),loop:$("playback-loop").checked};
+};
 $("reset").onclick = () => views?.fit();
-$("orientation").onchange = event => views?.setOrientation(event.target.value);
+document.querySelectorAll("[data-orientation]").forEach(button=>button.onclick=()=>{views?.setOrientation(button.dataset.orientation);$("orientation").open=false;});
 $("layout").onchange = event => views?.setLayout(event.target.value);
 $("expand").onclick = () => views?.toggleExpand();
 for (const mode of ["rotate", "pan", "zoom"]) $(mode).onclick = () => views?.setMode(mode);
 $("first").onclick = () => { stop(); go(0); };
 $("last").onclick = () => { stop(); if (doc) go(doc.count - 1); };
-for (const id of ["style", "palette", "radius-scale", "cell", "labels"]) $(id).onchange = () => render();
-$("source-toggle").onclick = () => { stop(); $("source-panel").hidden = !$("source-panel").hidden; };
+for (const id of ["style", "palette", "radius-scale", "cell", "labels", "hbonds", "wrap"]) $(id).onchange = () => { stop(); status(""); scheduleRender(id==="wrap"); };
+$("follow").onchange=()=>{stop();if($("follow").checked)setFollow(Number($("follow-number").value)-1);else {anchor=null;render();}};
+$("follow-apply").onclick=()=>{stop();setFollow(Number($("follow-number").value)-1);};
+$("follow-selected").onclick=()=>setFollow(selection[selection.length-1]);
+$("source-toggle").onclick = () => { stop(); $("source-panel").hidden = !$("source-panel").hidden; if(doc&&!sourceDirty)$("source").value=doc.frameText(frameIndex); };
 $("source").oninput = () => { sourceDirty = true; editRevision++; changed(dirty); };
 $("apply-source").onclick = applySource;
 $("apply-atom").onclick = () => {
@@ -205,6 +253,62 @@ $("save").onclick = save;
 $("enable-edit").onclick = () => loadFullFile(fileRef);
 document.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); save(); } });
 window.addEventListener("beforeunload", e => { if (dirty || sourceDirty) { e.preventDefault(); e.returnValue = ""; } });
-request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.3.0" }, appCapabilities: {} })
+request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.4.0" }, appCapabilities: {} })
   .then(() => { send("ui/notifications/initialized", {}); status("已连接，等待文件…"); })
   .catch(error => status(`连接失败：${error.message}`, true));
+
+$("open-file").onclick=()=>$("file-picker").click();
+$("file-picker").onchange=async()=>{
+  const file=$("file-picker").files[0];if(!file)return;
+  if((dirty||sourceDirty)&&!confirm("放弃尚未保存的修改并打开文件？"))return;
+  const generation=++readGeneration;stop();clearFollow();pickedFile=true;fileRef=null;resourceMeta={};frameIndex=0;selection=[];sourceDirty=false;doc=null;
+  binaryTrajectory=/\.traj$/i.test(file.name);editingMode(true);$("enable-edit").hidden=true;$("source-toggle").hidden=binaryTrajectory;$("source-panel").hidden=true;changed(false);status("");$("filename").textContent=file.name;
+  try {
+    if(binaryTrajectory){
+      loading=true;streamComplete=false;const trajectory=await ASETrajectory.open(file);
+      if(generation!==readGeneration)return;doc=new StructureParser.ProgressiveXYZDocument('preview.extxyz');
+      for(let index=0;index<trajectory.count;index++){
+        const block=await trajectory.frameText(index);if(generation!==readGeneration)return;doc.append(block);streamComplete=index===trajectory.count-1;
+        if(index===0)render(true);else updateTimeline();
+        if(index%16===0)await new Promise(resolve=>setTimeout(resolve,0));
+      }
+    } else {
+      const text=await file.text();if(generation!==readGeneration)return;
+      doc=new StructureParser.StructureDocument(file.name,text);streamComplete=true;render(true);
+    }
+  } catch(error){status(error.message,true);}finally{if(generation===readGeneration)loading=false;$("file-picker").value='';}
+};
+function snapshotOptions(){return {dpi:Number($("snapshot-dpi").value),format:$("snapshot-format").value,transparent:$("snapshot-transparent").checked,crop:$("snapshot-crop").checked};}
+async function refreshSnapshot(){
+  const ticket=++snapshotTicket;snapshotData=null;$("snapshot-save").disabled=true;$("snapshot-result").textContent='';
+  try {
+    const result=await StructureSnapshot.capture(views,snapshotOptions());
+    if(ticket!==snapshotTicket)return;snapshotData=result;$("snapshot-preview").src=result.preview;$("snapshot-preview").hidden=false;$("snapshot-save").disabled=false;
+  }catch(error){if(ticket===snapshotTicket)$("snapshot-result").textContent=error.message;}
+}
+$("snapshot").onclick=()=>{
+  if(!views||!doc)return;stop();$("snapshot-name").value=$("filename").textContent.replace(/\.[^.]+$/,'').replace(/[^\p{L}\p{N}_ .()\-]/gu,'_')+'-frame-'+(frameIndex+1);
+  snapshotData=null;$("snapshot-save").disabled=true;$("snapshot-preview").hidden=true;
+  $("snapshot-dialog").showModal();afterPaint(refreshSnapshot);
+};
+for(const id of ["snapshot-format","snapshot-dpi","snapshot-transparent","snapshot-crop"])$(id).onchange=()=>{
+  snapshotData=null;$("snapshot-save").disabled=true;
+  $("snapshot-transparent").disabled=$("snapshot-format").value!=='png';afterPaint(refreshSnapshot);
+};
+$("snapshot-close").onclick=()=>{$("snapshot-dialog").close();++snapshotTicket;};
+$("snapshot-save").onclick=async()=>{
+  if(!snapshotData)return;
+  const result=snapshotData,format=$("snapshot-format").value,name=$("snapshot-name").value+'.'+format;
+  if(!/^[\p{L}\p{N}_ .()\-]{1,100}\.(png|jpeg|pdf)$/u.test(name)||name.startsWith('.')){$("snapshot-result").textContent='请使用字母、数字、中文、空格、下划线或短横线命名';return;}
+  $("snapshot-save").disabled=true;
+  try {
+    if(pickedFile){
+      const url=URL.createObjectURL(new Blob([result.bytes],{type:result.mime})),link=document.createElement('a');link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);$("snapshot-result").textContent='已请求下载 '+name;
+    }else{
+      let binary='';for(let i=0;i<result.bytes.length;i+=32768)binary+=String.fromCharCode(...result.bytes.subarray(i,i+32768));
+      const saved=await request('tools/call',{name:'save_structure_snapshot',arguments:{name,data:btoa(binary)}});
+      if(saved.isError)throw Error(saved.content?.find(c=>c.text)?.text||'保存失败');
+      if(!saved.structuredContent?.path)throw Error('宿主未确认保存路径');$("snapshot-result").textContent='已保存：'+saved.structuredContent.path;
+    }
+  }catch(error){$("snapshot-result").textContent=error.message;}finally{$("snapshot-save").disabled=false;}
+};

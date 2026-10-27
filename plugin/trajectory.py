@@ -5,6 +5,7 @@ from typing import Any, BinaryIO
 import hashlib
 import os
 import stat
+from ase_trajectory import read_batch
 
 
 def file_version(info: Any) -> str:
@@ -26,8 +27,8 @@ def read_frames(params: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(host_path, str) or not Path(host_path).is_absolute():
         return {"supported": False, "reason": "host-path-unavailable"}
     path = Path(host_path)
-    if path.suffix.lower() not in {".xyz", ".extxyz"}:
-        raise ValueError("分段读取目前仅支持 XYZ/extxyz。")
+    if path.suffix.lower() not in {".xyz", ".extxyz", ".traj"}:
+        raise ValueError("分段读取支持 XYZ/extxyz/ASE traj。")
     if not stat.S_ISREG(path.stat().st_mode):
         raise ValueError("只能读取普通结构文件。")
     arguments = params.get("arguments", {})
@@ -46,6 +47,11 @@ def read_frames(params: dict[str, Any]) -> dict[str, Any]:
         version = file_version(info)
         if offset > info.st_size or (offset and arguments.get("version") != version):
             raise ValueError("加载期间文件已改变；请重新打开，避免混合不同版本的帧。")
+        if path.suffix.lower() == ".traj":
+            batch = read_batch(stream, offset, frame_limit)
+            if file_version(os.fstat(stream.fileno())) != version or file_version(path.stat()) != version:
+                raise ValueError("读取期间文件已改变，请重新打开。")
+            return {**batch, "version": version}
         stream.seek(offset)
         size = 0
         while frame_count < frame_limit and size < 262144:

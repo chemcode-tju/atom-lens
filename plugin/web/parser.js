@@ -28,6 +28,7 @@
       const width = number(fields[i + 2]);
       if (!Number.isInteger(width) || width < 1) throw Error("Properties 列数无效");
       if (fields[i] === "species" || fields[i] === "Z") { result.species = result.width; result.atomicNumber = fields[i] === "Z"; }
+      if (["id", "atom_id", "identifier"].includes(fields[i]) && width === 1) result.id = result.width;
       if (fields[i] === "pos") { if (width !== 3) throw Error("pos 必须有 3 列"); result.position = result.width; }
       result.width += width;
     }
@@ -64,7 +65,7 @@
       const elem = layout.atomicNumber ? elements[number(values[layout.species])] : values[layout.species].replace(/^['"]|['"]$/g, "");
       if (!elements.includes(elem) || elem === "X") throw Error(`未知元素：${elem}`);
       const [x, y, z] = values.slice(layout.position, layout.position + 3).map(number);
-      atoms.push({ elem, x, y, z, serial: i + 1 });
+      atoms.push({ elem, x, y, z, serial: i + 1, ...(layout.id == null ? {} : {id: values[layout.id]}) });
     }
     return { atoms, cell, pbc, info, header, layout };
   }

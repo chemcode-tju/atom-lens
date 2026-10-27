@@ -24,7 +24,7 @@ class StructureViews {
     element.innerHTML = '<button class="view-title" type="button"></button><div class="view-canvas"></div><div class="pointer-layer"></div><svg class="axis-gizmo" viewBox="0 0 78 78" aria-label="坐标轴"></svg>';
     this.container.append(element);
     const canvas = element.querySelector(".view-canvas");
-    const viewer = $3Dmol.createViewer(canvas, {backgroundColor: "#ffffff", antialias: true, orthographic: true, disableFog: true});
+    const viewer = $3Dmol.createViewer(canvas, {canvas: document.createElement("canvas"), row:0, col:0, rows:1, cols:1, backgroundColor: "#ffffff", antialias: true, orthographic: true, disableFog: true});
     const pane = {element, canvas, viewer, preset, ready: false};
     this.panes.push(pane);
     element.querySelector(".view-title").textContent = this.title(preset);
@@ -55,7 +55,7 @@ class StructureViews {
   activate(index) {
     this.active = index;
     this.panes.forEach((pane, i) => pane.element.classList.toggle("active", i === index));
-    document.getElementById("orientation").value = this.panes[index].preset;
+    document.getElementById("orientation-label").textContent = this.title(this.panes[index].preset);
   }
   setLayout(layout) {
     this.layout = layout;
@@ -64,6 +64,7 @@ class StructureViews {
     if (!visible.includes(this.active)) this.activate(1);
     this.panes.forEach((pane, index) => { pane.element.hidden = !visible.includes(index); });
     this.activate(this.active);
+    if (this.latest) this.render(...this.latest, false);
     document.getElementById("layout").value = layout;
     requestAnimationFrame(() => this.panes.forEach(pane => {
       if (!pane.element.hidden) {
@@ -93,11 +94,11 @@ class StructureViews {
     pane.element.querySelector(".view-title").textContent = this.title(preset);
     this.fit(pane);
   }
-  setOrientation(preset) { this.orient(this.panes[this.active], preset); }
+  setOrientation(preset) { this.orient(this.panes[this.active], preset); this.activate(this.active); }
   fit(pane = this.panes[this.active]) {
     if (!pane.ready || pane.element.hidden || !this.bounds) return;
     const {min, max} = this.bounds;
-    const center = min.map((n, i) => (n + max[i]) / 2);
+    const center = this.follow ? [this.follow.x,this.follow.y,this.follow.z] : min.map((n, i) => (n + max[i]) / 2);
     const view = pane.viewer.getView();
     const projected = Array.from({length:8}, (_,mask) => projectToView(min.map((n,i) => ((mask>>i)&1 ? max[i] : n) - center[i]), view.slice(4,8)));
     const halfX = Math.max(...projected.map(v => Math.abs(v[0]))), halfY = Math.max(...projected.map(v => Math.abs(v[1]))), halfZ = Math.max(...projected.map(v => Math.abs(v[2])));
@@ -115,7 +116,41 @@ class StructureViews {
       return `<line x1="31" y1="46" x2="${endX}" y2="${endY}" stroke="${color}" stroke-width="1.5"/><text x="${endX+3}" y="${endY-3}" fill="${color}">${["x", "y", "z"][index]}</text>`;
     }).join("");
   }
+  setLighting(viewer, enabled) {
+    // Match the studio shaders bundled by server.py, on screen and in exports.
+    const light = viewer.scene?.__lights?.[0];
+    if (light) { light.position.set(-0.35, 0.5, 1).normalize(); light.intensity = 1; }
+    viewer.setViewStyle({style: ""});
+  }
+  exportPane(width, height) {
+    if (!this.exportView) {
+      const element=document.createElement('div');
+      element.setAttribute('aria-hidden','true');
+      element.style.cssText='position:fixed;left:-20000px;top:0;pointer-events:none';
+      element.innerHTML='<div class="view-title"></div><svg class="axis-gizmo"></svg><div class="export-canvas"></div>';
+      document.body.append(element);
+      const canvas=element.querySelector('.export-canvas');
+      canvas.style.width=width+'px';canvas.style.height=height+'px';
+      const viewer=$3Dmol.createViewer(canvas,{canvas:document.createElement('canvas'),row:0,col:0,rows:1,cols:1,backgroundColor:'#ffffff',backgroundAlpha:0,antialias:true,orthographic:true,disableFog:true,nomouse:true});
+      const pane={element,canvas,viewer,preset:'xz',ready:false};
+      const exporter=Object.create(StructureViews.prototype);
+      Object.assign(exporter,{panes:[pane],onAtom:()=>{},active:0});
+      this.exportView={pane,exporter};
+    }
+    const {pane,exporter}=this.exportView;
+    pane.canvas.style.width=width+'px';pane.canvas.style.height=height+'px';pane.element.style.width=width+'px';pane.element.style.height=height+'px';
+    pane.viewer.resize();pane.preset=this.panes[this.active].preset;
+    exporter.render(...this.latest,false);
+    pane.viewer.setProjection(pane.preset==='perspective'?'perspective':'orthographic');
+    pane.viewer.setView(this.panes[this.active].viewer.getView());
+    pane.viewer.setBackgroundColor('#ffffff',0);pane.viewer.render();
+    return pane;
+  }
   render(frame, options, selected, reset) {
+    this.latest = [frame, options, selected];
+    this.follow = options.follow || null;
+    const hydrogenBonds = options.hbonds ? StructureGeometry.hydrogenBonds(frame) : [];
+
     const colors = StructureAppearance.palette(options.palette, $3Dmol.elementColors);
     const vertices = options.cell && frame.cell ? Array.from({length:8}, (_,mask) => Object.fromEntries(["x","y","z"].map((axis,j) => [axis, frame.cell.reduce((sum,v,k) => sum + ((mask>>k)&1)*v[j], 0)]))) : [];
     this.bounds = {min:[Infinity,Infinity,Infinity], max:[-Infinity,-Infinity,-Infinity]};
@@ -124,7 +159,10 @@ class StructureViews {
       ["x","y","z"].forEach((axis,i) => { this.bounds.min[i] = Math.min(this.bounds.min[i], atom[axis]-radius); this.bounds.max[i] = Math.max(this.bounds.max[i], atom[axis]+radius); });
     }
     for (const pane of this.panes) {
+      if (pane.element.hidden) { pane.stale = true; continue; }
       const viewer = pane.viewer, previous = viewer.getView();
+      const initialize = !pane.ready;
+      this.setLighting(viewer, options.lighting);
       viewer.removeAllModels(); viewer.removeAllShapes(); viewer.removeAllLabels();
       const xyz = `${frame.atoms.length}\n\n${frame.atoms.map(a => `${a.elem} ${a.x} ${a.y} ${a.z}`).join("\n")}\n`;
       const model = viewer.addModel(xyz, "xyz", {assignBonds: options.style !== "sphere"});
@@ -138,10 +176,22 @@ class StructureViews {
       if (options.cell && frame.cell) {
         for (let mask=0; mask<8; mask++) for (let k=0; k<3; k++) if (!(mask & (1<<k))) viewer.addLine({start:vertices[mask], end:vertices[mask | (1<<k)], color:"#333333", linewidth:1});
       }
-      if (options.labels && frame.atoms.length <= 1000) frame.atoms.forEach((atom, i) => viewer.addLabel(`${atom.elem}${i+1}`, {position:atom, fontSize:11, fontColor:"#222222", showBackground:false}));
-      selected.forEach(i => viewer.addLabel(`${frame.atoms[i].elem} #${i+1}`, {position:frame.atoms[i], fontSize:12, backgroundColor:"#2361a9", backgroundOpacity:0.9}));
+      for (const bond of hydrogenBonds) {
+        const length = Math.hypot(...bond.end.map((x,i)=>x-bond.start[i]));
+        const steps = Math.max(2, Math.ceil(length / 0.16));
+        for(let i=0;i<steps;i+=2) {
+          const p=t=>Object.fromEntries(["x","y","z"].map((axis,j)=>[axis,bond.start[j]+(bond.end[j]-bond.start[j])*t/steps]));
+          viewer.addCylinder({start:p(i),end:p(Math.min(i+1,steps)),radius:0.035,color:0x3699ae,fromCap:1,toCap:1});
+        }
+      }
+      if (options.labels) frame.atoms.forEach((atom, i) => viewer.addLabel(`${atom.elem}${i+1}`, {position:atom, fontSize:11, fontColor:"#222222", showBackground:false}, undefined, true));
+      selected.forEach(i => viewer.addLabel(`${frame.atoms[i].elem} #${i+1}`, {position:frame.atoms[i], fontSize:12, backgroundColor:"#2361a9", backgroundOpacity:0.9}, undefined, true));
       pane.ready = true;
-      if (reset) this.orient(pane, pane.preset); else viewer.setView(previous);
+      if (reset || initialize) this.orient(pane, pane.preset);
+      else {
+        if (this.follow) previous.splice(0,3,-this.follow.x,-this.follow.y,-this.follow.z);
+        viewer.setView(previous);
+      }
       if (!pane.element.hidden) viewer.render();
     }
   }

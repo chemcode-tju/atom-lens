@@ -1,15 +1,21 @@
 {
   "name": "structure-viewer",
-  "version": "0.3.0",
-  "description": "Open XYZ and extxyz atomic structures directly in the Codex side panel, scrub trajectories, and edit files.",
-  "author": {"name": "liyang-tju"},
+  "version": "0.4.0",
+  "description": "Native atomic structure and trajectory viewer with periodic geometry, atom following, editing, and PNG/JPEG/PDF snapshots.",
+  "author": {
+    "name": "liyang-tju"
+  },
   "license": "MIT",
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Structure Viewer",
     "shortDescription": "原子结构与轨迹查看、编辑",
-    "longDescription": "Click an extxyz or xyz file to open an interactive atomic structure editor with a bottom frame slider. Includes VASP-format viewing for files with .poscar, .contcar, .vasp or .xdatcar extensions.",
+    "longDescription": "Open XYZ, extxyz, ASE traj and VASP structures in the Codex side panel. Includes multiview navigation, hydrogen bonds, display wrapping, atom following and snapshots. Bare POSCAR/CONTCAR/XDATCAR files can be selected with the local Open button.",
     "category": "Education & Research",
-    "capabilities": ["Interactive", "Read", "Write"]
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ]
   }
 }
