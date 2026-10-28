@@ -1,7 +1,7 @@
 """Dependency-free MCP server for the native Codex file-editor entrypoint."""
 
 # Configuration
-plugin_version = "0.7.0"
+plugin_version = "0.8.1"
 resource_uri = "ui://structure-viewer/editor.html"
 
 from pathlib import Path
@@ -12,6 +12,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from trajectory import read_frames
 from snapshot import save_snapshot, snapshot_context
+from local_export import prepare_local_snapshot, snapshot_save_status
 from path_access import StructurePaths
 
 selected_paths = StructurePaths()
@@ -98,6 +99,17 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
             "annotations": {"readOnlyHint": True, "openWorldHint": False},
             "_meta": {"ui": {"visibility": ["app"]}},
         }, {
+            "name": "snapshot_save_status", "title": "Mac snapshot save status",
+            "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
+            "annotations": {"readOnlyHint": True, "openWorldHint": False},
+            "_meta": {"ui": {"visibility": ["app"]}},
+        }, {
+            "name": "prepare_local_snapshot", "title": "Prepare Mac snapshot save",
+            "description": "Stage a user-requested image for the installed Mac snapshot saver to retrieve over SSH.",
+            "inputSchema": {"type": "object", "additionalProperties": False, "properties": {"name": {"type": "string"}, "data": {"type": "string"}}, "required": ["name", "data"]},
+            "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False},
+            "_meta": {"ui": {"visibility": ["app"]}},
+        }, {
             "name": "snapshot_context", "title": "Snapshot destinations",
             "description": "Identify the plugin host and the opened structure directory for snapshot saving.",
             "inputSchema": {"type": "object", "additionalProperties": False, "properties": {"token": {"type": "string"}}},
@@ -138,6 +150,12 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
         batch = read_frames(selected_paths.bind(params))
         return {"content": [{"type": "text", "text": f"Read {batch.get('frameCount', 0)} frames"}],
                 "structuredContent": batch}
+    if method == "tools/call" and params.get("name") == "snapshot_save_status":
+        result = snapshot_save_status(params.get("arguments", {}))
+        return {"content": [{"type": "text", "text": json.dumps(result)}], "structuredContent": result}
+    if method == "tools/call" and params.get("name") == "prepare_local_snapshot":
+        result = prepare_local_snapshot(params.get("arguments", {}))
+        return {"content": [], "structuredContent": result}
     if method == "tools/call" and params.get("name") == "snapshot_context":
         result = snapshot_context(selected_paths.bind(params))
         return {"content": [], "structuredContent": result}

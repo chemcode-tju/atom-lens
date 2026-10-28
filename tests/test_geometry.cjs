@@ -19,3 +19,14 @@ const f=doc.frame(0);assert.equal(f.atoms[0].id,'9');
 assert.equal(G.followAtom({...f,atoms:f.atoms.slice().reverse()},{id:'9',element:'O'}).elem,'O');
 assert.throws(()=>G.followAtom(f,{index:1,element:'O',signature:'O,H'}),/无法对应/);
 console.log('Periodic wrap, skewed MIC, hydrogen bond geometry, and ID following passed.');
+
+const {removeDrift,centerOfMass}=require('../plugin/web/geometry.js');
+const reference={atoms:[{elem:'H',mass:1,x:0,y:0,z:0},{elem:'O',mass:3,x:4,y:0,z:0}],cell:[[10,0,0],[0,10,0],[0,0,10]]};
+const shifted={...reference,atoms:reference.atoms.map(a=>({...a,x:a.x+7,y:a.y-2,z:a.z+3}))};
+const driftBefore=JSON.stringify(shifted),corrected=removeDrift(shifted,reference,[0,1],[0,1]);
+assert.deepEqual(centerOfMass(reference.atoms,[0,1]),[3,0,0]);
+assert.deepEqual(corrected.atoms,reference.atoms);assert.equal(corrected.cell,reference.cell);assert.equal(JSON.stringify(shifted),driftBefore);
+const subset=removeDrift({...shifted,atoms:[shifted.atoms[0],{...shifted.atoms[1],x:20}]},reference,[0],[0]);
+assert.equal(subset.atoms[1].x,13);assert.throws(()=>removeDrift(shifted,reference,[],[]));
+
+const massDoc=new StructureDocument('mass.extxyz','1\nProperties=species:S:1:pos:R:3:mass:R:1\nH 0 0 0 2.014\n');assert.equal(massDoc.frame(0).atoms[0].mass,2.014);

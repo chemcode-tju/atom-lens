@@ -54,6 +54,9 @@ def read_batch(stream: BinaryIO, start: int, limit: int) -> dict[str, Any]:
         header_data = data if "numbers." in data else first
         numbers = array(stream, header_data, "numbers")
         positions = array(stream, data, "positions")
+        masses = array(stream, header_data, "masses") if "masses." in header_data else None
+        if masses is not None and (len(masses) != len(numbers) or any(not math.isfinite(m) or m <= 0 for m in masses)):
+            raise ValueError("ASE 原子质量无效")
         cell = data.get("cell", [[0.0] * 3 for _ in range(3)])
         pbc = header_data.get("pbc", [False] * 3)
         if not 1 <= len(numbers) <= 100000 or len(numbers) != len(positions):
@@ -62,11 +65,12 @@ def read_batch(stream: BinaryIO, start: int, limit: int) -> dict[str, Any]:
             raise ValueError("ASE 晶胞或周期边界无效")
         lattice = " ".join(str(v) for row in cell for v in row)
         periodic = " ".join("T" if value else "F" for value in pbc)
-        rows = [str(len(numbers)), f'Lattice="{lattice}" Properties=species:S:1:pos:R:3 pbc="{periodic}"']
-        for number, position in zip(numbers, positions):
+        properties = "species:S:1:pos:R:3" + (":mass:R:1" if masses is not None else "")
+        rows = [str(len(numbers)), f'Lattice="{lattice}" Properties={properties} pbc="{periodic}"']
+        for atom_index, (number, position) in enumerate(zip(numbers, positions)):
             if type(number) is not int or not 1 <= number < len(symbols) or len(position) != 3 or not all(math.isfinite(v) for v in position):
                 raise ValueError("ASE 元素或坐标无效")
-            rows.append(f"{symbols[number]} {' '.join(str(v) for v in position)}")
+            rows.append(f"{symbols[number]} {' '.join(str(v) for v in position)}" + (f" {masses[atom_index]}" if masses is not None else ""))
         block = "\n".join(rows) + "\n"
         blocks.append(block)
         size += len(block)

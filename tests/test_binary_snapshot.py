@@ -24,7 +24,9 @@ def fixture(path: Path) -> None:
         data.extend(struct.pack("<q", number))
         positions = len(data)
         data.extend(struct.pack("<ddd", -1.5, 2.0, 3.25))
-        meta = {"numbers.": {"ndarray": [[1], "int64", numbers]},
+        masses = len(data)
+        data.extend(struct.pack("<d", 17.0 if number == 8 else 2.0))
+        meta = {"masses.": {"ndarray": [[1], "float64", masses]}, "numbers.": {"ndarray": [[1], "int64", numbers]},
                 "positions.": {"ndarray": [[1, 3], "float64", positions]},
                 "cell": [[8, 0, 0], [1, 9, 0], [0, 0, 10]], "pbc": [True, False, True]}
         encoded = json.dumps(meta).encode()
@@ -41,11 +43,12 @@ class FeatureTests(unittest.TestCase):
             fixture(path)
             params = {"_meta": {"openai/resource": {"path": str(path)}}, "arguments": {"frameLimit": 1}}
             first = read_frames(params)
-            self.assertIn("O -1.5 2.0 3.25", first["text"])
+            self.assertIn("O -1.5 2.0 3.25 17.0", first["text"])
+            self.assertIn("mass:R:1", first["text"])
             self.assertFalse(first["eof"])
             params["arguments"].update(offset=1, version=first["version"])
             second = read_frames(params)
-            self.assertIn("H -1.5 2.0 3.25", second["text"])
+            self.assertIn("H -1.5 2.0 3.25 2.0", second["text"])
             self.assertTrue(second["eof"])
             path.write_bytes(path.read_bytes()[:-1])
             with self.assertRaises(ValueError):

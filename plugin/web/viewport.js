@@ -33,7 +33,23 @@ class StructureViews {
     element.addEventListener("pointerdown", () => this.activate(index), true);
     element.addEventListener("mousedown", () => this.activate(index), true);
     viewer.setViewChangeCallback(() => { this.drawAxes(pane); this.drawSelection(pane); });
-    new ResizeObserver(() => { if (!element.hidden) { viewer.resize(); if (pane.ready) this.fit(pane); else viewer.render(); } }).observe(canvas);
+    new ResizeObserver(() => { if (!element.hidden) { viewer.resize(); viewer.render(); } }).observe(canvas);
+    let rightPointer=null;
+    element.addEventListener('contextmenu',event=>event.preventDefault());
+    element.addEventListener('mousedown',event=>{if(event.button===2){event.preventDefault();event.stopImmediatePropagation();}},true);
+    element.addEventListener('pointerdown',event=>{
+      if(event.button!==2||event.target.closest('button'))return;
+      rightPointer={id:event.pointerId,x:event.clientX,y:event.clientY};
+      element.setPointerCapture(event.pointerId);event.preventDefault();event.stopImmediatePropagation();
+    },true);
+    element.addEventListener('pointermove',event=>{
+      if(!rightPointer||event.pointerId!==rightPointer.id)return;
+      viewer.translateScene(event.clientX-rightPointer.x,event.clientY-rightPointer.y);
+      rightPointer.x=event.clientX;rightPointer.y=event.clientY;event.stopImmediatePropagation();
+    },true);
+    for(const name of ['pointerup','pointercancel'])element.addEventListener(name,event=>{
+      if(rightPointer?.id===event.pointerId){rightPointer=null;event.stopImmediatePropagation();}
+    },true);
     const layer = element.querySelector(".pointer-layer");
     let pointer = null;
     layer.onpointerdown = event => {
@@ -129,7 +145,7 @@ class StructureViews {
     }).join("");
   }
   drawSelection(pane) {
-    if(pane.drawingSelection||!pane.markers?.length)return;
+    if(pane.drawingSelection)return;
     const viewer=pane.viewer,view=viewer.getView(),key=JSON.stringify([view,pane.preset,pane.canvas.clientWidth,pane.canvas.clientHeight]);
     if(pane.markerView===key)return;
     pane.drawingSelection=true;
@@ -140,16 +156,45 @@ class StructureViews {
       const camera=viewer.camera.position.clone().applyMatrix4(inverse);
       const q=view.slice(4,8),[x,y,z,w]=q;
       const forward=[2*(x*z-y*w),2*(y*z+x*w),1-2*(x*x+y*y)];
-      for(const {atom,radius} of pane.markers) {
+      let combined={vertexArr:[],normalArr:[],faceArr:[],color:0x004500,opacity:1};
+      const flush=()=>{if(combined.vertexArr.length)pane.markerShapes.push(viewer.addCustom(combined));combined={vertexArr:[],normalArr:[],faceArr:[],color:0x004500,opacity:1};};
+      for(const {atom,radius} of pane.markers||[]) {
         const delta=[camera.x-atom.x,camera.y-atom.y,camera.z-atom.z];
         const distance=pane.preset==='perspective'?Math.hypot(...delta):Infinity;
         const normal=Number.isFinite(distance)?delta:forward;
         const origin=viewer.modelToScreen(atom);
         const unitsPerPixel=viewer.screenToModelDistance({x:origin.x+2.5,y:origin.y},atom);
-        pane.markerShapes.push(viewer.addCustom(StructureSelection.outlineRing(atom,radius,normal,Math.min(radius*.12,unitsPerPixel),distance)));
+        if(combined.vertexArr.length>32000)flush();
+        const mesh=StructureSelection.outlineRing(atom,radius,normal,Math.min(radius*.12,unitsPerPixel),distance),offset=combined.vertexArr.length;
+        combined.vertexArr.push(...mesh.vertexArr);combined.normalArr.push(...mesh.normalArr);
+        combined.faceArr.push(...mesh.faceArr.map(i=>i+offset));
       }
+      flush();
       pane.markerView=key;viewer.render();
     } finally {pane.drawingSelection=false;}
+  }
+  updateSelection(selected) {
+    if(!this.latest)return;
+    this.latest[2]=selected;
+    const [frame,options]=this.latest;
+    for(const pane of this.panes) {
+      if(pane.element.hidden)continue;
+      for(const shape of [...(pane.markerShapes||[]),...(pane.measureShapes||[])].sort((a,b)=>b.shapePosition-a.shapePosition))pane.viewer.removeShape(shape);
+      pane.markerShapes=[];pane.measureShapes=[];pane.markers=[];pane.markerView=null;
+      this.prepareSelection(pane,frame,options,selected);
+      pane.viewer.render();
+    }
+  }
+  prepareSelection(pane,frame,options,selected) {
+    const visibleSet=new Set(this.visibleIndices);
+    pane.markers=selected.filter(i=>visibleSet.has(i)).map(i=>{
+      const atom=frame.atoms[i],rule=this.rules[i];
+      return {atom,radius:rule.style==='stick'?.19:StructureAppearance.radius(atom.elem)*options.scale*(rule.style==='ballstick'?.45:1)};
+    });
+    pane.measureShapes=[];
+    if(selected.length>=2&&selected.length<=4)for(let j=1;j<selected.length;j++) {
+      if(visibleSet.has(selected[j-1])&&visibleSet.has(selected[j]))pane.measureShapes.push(pane.viewer.addLine({start:frame.atoms[selected[j-1]],end:frame.atoms[selected[j]],color:'#075dce',linewidth:2}));
+    }
   }
   setLighting(viewer, enabled) {
     // Match the studio shaders bundled by server.py, on screen and in exports.
@@ -185,6 +230,7 @@ class StructureViews {
     this.latest = [frame, options, selected];
     this.follow = options.follow || null;
     const rules=frame.atoms.map((atom,index)=>options.display?.resolve(atom,index,options)||{...options,visible:true});
+    this.rules=rules;
     this.visibleIndices=rules.flatMap((rule,index)=>rule.visible?[index]:[]);
     const visibleSet=new Set(this.visibleIndices);
     const hydrogenBonds = options.hbonds ? StructureGeometry.hydrogenBonds(frame).filter(b=>visibleSet.has(b.donor)&&visibleSet.has(b.hydrogen)&&visibleSet.has(b.acceptor)) : [];
@@ -234,14 +280,7 @@ class StructureViews {
         }
       }
       if (options.labels) this.visibleIndices.forEach(i => {const atom=frame.atoms[i];viewer.addLabel(`${atom.elem}${i+1}`, {position:atom, fontSize:11, fontColor:"#222222", showBackground:false}, undefined, true);});
-      for(const i of selected)if(visibleSet.has(i)) {
-        const atom=frame.atoms[i],rule=rules[i];
-        const radius=rule.style==='stick'?.19:StructureAppearance.radius(atom.elem)*options.scale*(rule.style==='ballstick'?.45:1);
-        pane.markers.push({atom,radius});
-      }
-      if(selected.length>=2&&selected.length<=4)for(let j=1;j<selected.length;j++) {
-        if(visibleSet.has(selected[j-1])&&visibleSet.has(selected[j]))viewer.addLine({start:frame.atoms[selected[j-1]],end:frame.atoms[selected[j]],color:'#075dce',linewidth:2});
-      }
+      this.prepareSelection(pane,frame,options,selected);
       pane.ready = true;
       if (reset || initialize) this.orient(pane, pane.preset);
       else {
@@ -252,4 +291,4 @@ class StructureViews {
     }
   }
 }
-if (typeof module !== "undefined" && module.exports) module.exports = {projectToView, viewQuaternions};
+if (typeof module !== "undefined" && module.exports) module.exports = {projectToView, viewQuaternions, StructureViews};

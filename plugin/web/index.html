@@ -11,18 +11,24 @@
   </div>
   <div id="status" role="alert" hidden></div>
   <div id="viewports" class="viewports" data-layout="single" data-mode="rotate"></div>
-  <section id="atom-panel" hidden><div class="section-head"><strong id="atom-title">已选原子</strong><button id="clear-selection">清除选择</button></div><output id="measurement"></output><div id="atom-list"></div><button id="follow-selected">跟随最后选中原子</button></section>
+  <section id="atom-panel"><strong id="atom-title"></strong><output id="measurement"></output><span id="atom-list"></span><button id="clear-selection" disabled>清除选择</button></section>
   <section id="source-panel" hidden><div class="section-head"><strong id="source-title">当前帧源码</strong></div><textarea id="source" readonly spellcheck="false" aria-label="当前结构源码"></textarea></section>
   <footer>
     <div class="timeline-row"><div class="frame-label"><input id="frame-number" type="number" min="1" value="1" aria-label="帧号"><span id="frame-count">/ —</span></div><div class="ruler"><div id="ticks" aria-hidden="true"></div><input id="timeline" type="range" min="0" max="0" value="0" aria-label="轨迹帧滑块" disabled></div></div>
     <div class="control-row">
       <div class="playback"><button id="first" aria-label="第一帧" title="第一帧">|◀</button><button id="previous" aria-label="上一帧" title="上一帧">◀</button><button id="play" aria-label="播放轨迹" title="播放 / 暂停">▶</button><button id="next" aria-label="下一帧" title="下一帧">▶</button><button id="last" aria-label="最后一帧" title="最后一帧">▶|</button><button id="playback-settings" aria-label="播放设置" title="播放设置">⚙</button></div>
       <div class="view-controls"><details id="orientation" class="view-menu"><summary id="orientation-label">Front · XZ</summary><div class="view-menu-items"><button data-orientation="xz">Front · XZ</button><button data-orientation="xy">Top · XY</button><button data-orientation="yz">Left · YZ</button><button data-orientation="perspective">Perspective</button></div></details><select id="layout" aria-label="视图布局"><option value="single">单视图</option><option value="dual">双视图</option><option value="quad">四视图</option></select></div>
-      <div class="navigation" role="group" aria-label="视图操作"><button id="rotate" data-mode-button="rotate" aria-label="旋转" title="旋转" aria-pressed="true">⟳</button><button id="pan" data-mode-button="pan" aria-label="平移" title="平移" aria-pressed="false">✥</button><button id="zoom" data-mode-button="zoom" aria-label="缩放" title="缩放" aria-pressed="false">⌕</button><button id="select" data-mode-button="select" aria-pressed="false" title="点击原子选择 / 测量">选择</button><button id="box" data-mode-button="box" aria-pressed="false" title="框选原子中心（包含后方原子）；Shift 追加">框选</button><button id="reset" aria-label="适应视图" title="适应视图">⊡</button><button id="expand" aria-label="展开当前视图" title="展开 / 恢复多视图">⛶</button></div>
+      <div class="navigation" role="group" aria-label="视图操作"><button id="rotate" data-mode-button="rotate" aria-label="旋转" title="旋转" aria-pressed="true">⟳</button><button id="pan" data-mode-button="pan" aria-label="平移" title="平移" aria-pressed="false">✥</button><button id="zoom" data-mode-button="zoom" aria-label="缩放" title="缩放" aria-pressed="false">⌕</button><button id="select" data-mode-button="select" aria-pressed="false" title="点击原子选择 / 测量">选择</button><button id="box" data-mode-button="box" aria-pressed="false" title="框选原子中心（包含后方原子）；Shift 反选">框选</button><button id="reset" aria-label="适应视图" title="适应视图">⊡</button><button id="expand" aria-label="展开当前视图" title="展开 / 恢复多视图">⛶</button></div>
     </div>
-    <div class="follow-row"><label><input id="follow" type="checkbox">跟随原子</label><input id="follow-number" type="number" min="1" value="1" aria-label="跟随原子序号"><button id="follow-apply">指定中心</button></div>
+    <div class="follow-row"><button id="drift-settings">质心漂移校正…</button></div>
   </footer>
 </main>
+<dialog id="drift-dialog"><h2>质心漂移校正</h2><fieldset>
+<label class="check-row"><input id="drift-enabled" type="checkbox">移除轨迹的质心漂移</label>
+<label>参考帧编号（从 0 开始）<input id="drift-reference" type="number" min="0" value="0"></label>
+<label class="check-row"><input id="drift-selected" type="checkbox">仅使用选中原子计算质心</label>
+<p>输入轨迹需为连续、未折回的坐标。所有原子统一平移，晶胞不动。</p></fieldset>
+<output id="drift-error" role="alert"></output><div class="dialog-actions"><button id="drift-close">关闭</button><button id="drift-apply">应用</button></div></dialog>
 <dialog id="path-dialog"><h2>打开结构文件</h2><label for="structure-path" id="path-host">当前主机上的完整路径</label><input id="structure-path" type="text" placeholder="/完整路径/POSCAR" autocomplete="off" spellcheck="false"><output id="path-error" role="alert"></output><div class="dialog-actions"><button id="path-close">关闭</button><button id="path-load">打开</button></div></dialog>
 <dialog id="display-dialog">
   <h2>显示设置</h2>

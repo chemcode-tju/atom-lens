@@ -5,18 +5,21 @@ let nextId = 1, hostName = "当前主机", fileRef, doc, frameIndex = 0, frameDa
 let selection = [], timer = null, loading = false, readGeneration = 0;
 let displayState = new StructureSelection.DisplayState();
 let streamComplete = true, binaryTrajectory = false, pickedFile = false;
-let anchor = null, paintTicket = 0, snapshotTicket = 0, snapshotData = null;
+let drift = null, paintTicket = 0, snapshotTicket = 0, snapshotData = null;
 let snapshotHost = null;
 let playback = {fps:60, speed:1, step:1, loop:true};
 function afterPaint(callback) { requestAnimationFrame(() => setTimeout(callback, 0)); }
 function scheduleRender(reset = false) { const ticket=++paintTicket; afterPaint(() => { if(ticket===paintTicket)render(reset); }); }
-function clearFollow() { anchor=null; $("follow").checked=false; }
-function setFollow(index) {
-  if(!doc)return;
-  const frame=doc.frame(frameIndex),atom=frame.atoms[index];
-  if(!atom) { status("原子序号超出范围",true); return; }
-  anchor={index,id:atom.id,element:atom.elem,signature:frame.atoms.map(a=>a.elem).join(',')};
-  $("follow").checked=true;$("follow-number").value=index+1;render();
+function clearFollow() { drift=null;$("drift-enabled").checked=false; }
+function displayedFrame() {
+  let frame=frameData;
+  if(drift) {
+    const reference=doc.frame(drift.reference);
+    const currentIndices=drift.selected?selection:frame.atoms.map((_,i)=>i);
+    const referenceIndices=StructureSelection.remap(frame,reference,currentIndices);
+    frame=StructureGeometry.removeDrift(frame,reference,currentIndices,referenceIndices);
+  }
+  return $("wrap").checked?StructureGeometry.wrap(frame):frame;
 }
 function send(method, params) { window.parent.postMessage({ jsonrpc: "2.0", method, params }, "*"); }
 function request(method, params, timeoutMs = 60000) {
@@ -53,10 +56,9 @@ function render(reset = false) {
     frameData = doc.frame(frameIndex);
     if (!views) views = new StructureViews($("viewports"), chooseAtom, chooseBox);
     selection = selection.filter(i => i < frameData.atoms.length);
-    const displayed = $("wrap").checked ? StructureGeometry.wrap(frameData) : frameData;
-    const follow = $("follow").checked ? StructureGeometry.followAtom(displayed, anchor) : null;
+    const displayed = displayedFrame();
     views.render(displayed, {style: $("style").value, palette: $("palette").value,
-      scale: Number($("radius-scale").value), cell: $("cell").checked, labels: $("labels").checked, hbonds: $("hbonds").checked, lighting: true, follow, display: displayState}, selection, reset);
+      scale: Number($("radius-scale").value), cell: $("cell").checked, labels: $("labels").checked, hbonds: $("hbonds").checked, lighting: true, display: displayState}, selection, reset);
     updateTimeline();
     if (!$("source-panel").hidden) $("source").value = doc.frameText(frameIndex);
     $("source-title").textContent = doc.xyz ? `第 ${frameIndex + 1} 帧源码` : "VASP 文件源码";
@@ -64,25 +66,28 @@ function render(reset = false) {
   } catch (error) { stop(); status(error.message, true); }
 }
 function updateSelection() {
-  $("atom-panel").hidden = selection.length === 0;
-  $("atom-title").textContent = `已选 ${selection.length} 个原子`;
+  $("atom-title").textContent=selection.length?`已选 ${selection.length}`:'';
   if(!frameData)return;
-  const displayed = $("wrap").checked ? StructureGeometry.wrap(frameData) : frameData;
-  $("measurement").textContent = StructureSelection.measure(displayed.atoms, selection);
-  $("atom-list").replaceChildren(...selection.map((index, order) => {
-    const atom=displayed.atoms[index], row=document.createElement('div');
-    row.textContent=`${order+1}. ${atom.elem} #${index+1}   (${atom.x.toFixed(4)}, ${atom.y.toFixed(4)}, ${atom.z.toFixed(4)}) Å`;
-    return row;
-  }));
+  const atoms=displayedFrame().atoms;
+  $("measurement").textContent=selection.length>4?StructureSelection.formula(atoms,selection):StructureSelection.measure(atoms,selection);
+  $("atom-list").textContent=selection.length===1?(()=>{const i=selection[0],a=atoms[i];return `${a.elem} #${i+1}  (${a.x.toFixed(4)}, ${a.y.toFixed(4)}, ${a.z.toFixed(4)}) Å`;})():selection.length<=4?selection.map(i=>`${atoms[i].elem} #${i+1}`).join(' → '):'';
+  $("clear-selection").disabled=!selection.length;
   $("selection-count").textContent=`选中原子 · ${selection.length}`;
   $("apply-display").disabled=$("reset-selected-style").disabled=!selection.length;
 }
+function selectionChanged() {
+  stop();
+  if(drift?.selected){if(!selection.length){clearFollow();}render();return;}
+  updateSelection();
+  const ticket=++paintTicket;
+  afterPaint(()=>{if(ticket===paintTicket)views?.updateSelection(selection);});
+}
 function chooseAtom(index) {
   if(views?.mode!=="select")return;
-  stop(); selection=selection.includes(index)?selection.filter(i=>i!==index):[...selection,index];render();
+  selection=StructureSelection.toggleIndices(selection,[index]);selectionChanged();
 }
-function chooseBox(indices, append) {
-  stop();selection=append?[...new Set([...selection,...indices])]:indices;render();
+function chooseBox(indices, toggle) {
+  selection=toggle?StructureSelection.toggleIndices(selection,indices):indices;selectionChanged();
 }
 function resetDisplayState() { displayState=new StructureSelection.DisplayState();selection=[]; }
 function populateElements() {
@@ -94,7 +99,7 @@ function populateElements() {
   }));
   updateSelection();
 }
-$("clear-selection").onclick=()=>{selection=[];render();};
+$("clear-selection").onclick=()=>{selection=[];selectionChanged();};
 $("display-settings").onclick=()=>{stop();populateElements();$("display-dialog").showModal();};
 $("display-close").onclick=()=>$("display-dialog").close();
 $("show-elements").onclick=()=>{displayState.hiddenElements.clear();populateElements();scheduleRender();};
@@ -107,12 +112,17 @@ $("reset-display").onclick=()=>{resetDisplayState();populateElements();scheduleR
 function go(index) {
   if (!doc) return;
   const target = Math.max(0, Math.min(doc.count - 1, Number(index) || 0));
-  try { if($("follow").checked)StructureGeometry.followAtom(doc.frame(target),anchor); }
-  catch(error){stop();status(error.message,true);return;}
   const previousFrame=doc.frame(frameIndex),nextFrame=doc.frame(target);
   selection=StructureSelection.remap(previousFrame,nextFrame,selection);
   displayState.transition(previousFrame,nextFrame);
-  frameIndex=target;status("");render();
+  frameIndex=target;status("");
+  let driftStopped=false;
+  if(drift){
+    const indices=drift.selected?selection:nextFrame.atoms.map((_,i)=>i);
+    if(!indices.length||StructureSelection.remap(nextFrame,doc.frame(drift.reference),indices).length!==indices.length){clearFollow();driftStopped=true;}
+  }
+  render();
+  if(driftStopped)status('当前帧的原子无法与参考帧对应，已停用质心校正',true);
 }
 async function loadFile(file, reload = false) {
   if (!file?.resourceUri || (!reload && fileRef?.resourceUri === file.resourceUri && (doc || loading))) return;
@@ -238,11 +248,24 @@ for (const mode of ["rotate", "pan", "zoom", "select", "box"]) $(mode).onclick =
 $("first").onclick = () => { stop(); go(0); };
 $("last").onclick = () => { stop(); if (doc) go(doc.count - 1); };
 for (const id of ["style", "palette", "radius-scale", "cell", "labels", "hbonds", "wrap"]) $(id).onchange = () => { stop(); status(""); scheduleRender(id==="wrap"); };
-$("follow").onchange=()=>{stop();if($("follow").checked)setFollow(Number($("follow-number").value)-1);else {anchor=null;render();}};
-$("follow-apply").onclick=()=>{stop();setFollow(Number($("follow-number").value)-1);};
-$("follow-selected").onclick=()=>setFollow(selection[selection.length-1]);
+$("drift-settings").onclick=()=>{
+  stop();$("drift-reference").max=Math.max(0,(doc?.count||1)-1);
+  $("drift-dialog").showModal();
+};
+$("drift-close").onclick=()=>$("drift-dialog").close();
+$("drift-apply").onclick=()=>{
+  if(!doc)return;
+  try {
+    const reference=Number($("drift-reference").value),selected=$("drift-selected").checked;
+    if(!Number.isInteger(reference)||reference<0||reference>=doc.count)throw Error('参考帧尚未加载或超出范围');
+    if($("drift-enabled").checked&&selected&&!selection.length)throw Error('请先选中用于计算质心的原子');
+    drift=$("drift-enabled").checked?{reference,selected}:null;
+    if(drift)$("wrap").checked=false;
+    displayedFrame();$("drift-error").textContent='';$("drift-dialog").close();render();
+  }catch(error){drift=null;$("drift-error").textContent=error.message;}
+};
 $("source-toggle").onclick = () => { stop(); $("source-panel").hidden = !$("source-panel").hidden; if(doc)$("source").value=doc.frameText(frameIndex); };
-request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.7.0" }, appCapabilities: {} })
+request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.8.1" }, appCapabilities: {} })
   .then(() => { send("ui/notifications/initialized", {}); status("已连接，等待文件…"); })
   .catch(error => status(`连接失败：${error.message}`, true));
 
@@ -310,10 +333,21 @@ $("snapshot-save").onclick=async()=>{
   try {
     const local=$("snapshot-destination").value==='local';
     if(local&&!snapshotHost.nativePicker){
-      // Ask the parent host to download. Direct iframe anchor downloads are
-      // blocked by Codex's MCP sandbox. Blob is structured-cloned, not JSON.
-      await request('ui/download-file',{blob:new Blob([result.bytes],{type:result.mime}),name});
-      $("snapshot-result").textContent='已交给 Mac 保存窗口；请在窗口中选择位置并完成保存';
+      let binary='';for(let i=0;i<result.bytes.length;i+=32768)binary+=String.fromCharCode(...result.bytes.subarray(i,i+32768));
+      const prepared=await request('tools/call',{name:'prepare_local_snapshot',arguments:{name,data:btoa(binary)}});
+      const id=prepared.structuredContent?.id;
+      if(!id)throw Error('无法准备本地快照：'+(prepared.content?.find(c=>c.text)?.text||'服务器未返回文件'));
+      $("snapshot-result").textContent='请在 Mac 系统窗口选择保存位置…';
+      let completed=false;
+      for(let attempt=0;attempt<330;attempt++){
+        await new Promise(resolve=>setTimeout(resolve,2000));
+        const reply=await request('tools/call',{name:'snapshot_save_status',arguments:{id}});
+        if(reply.isError)throw Error(reply.content?.find(c=>c.text)?.text||'无法确认保存状态');
+        const state=reply.structuredContent?.status;
+        if(state==='saved'||state==='cancelled'){$("snapshot-result").textContent=state==='saved'?'已保存到本地 Mac':'已取消保存';completed=true;break;}
+        if(['error','disconnected','expired'].includes(state))throw Error({error:'Mac 保存失败，请查看系统窗口',disconnected:'Mac 保存助手已断开，请重新打开助手后重试',expired:'保存请求已过期，请重试'}[state]);
+      }
+      if(!completed)throw Error('等待 Mac 保存结果超时，请检查系统窗口');
     }else{
       let binary='';for(let i=0;i<result.bytes.length;i+=32768)binary+=String.fromCharCode(...result.bytes.subarray(i,i+32768));
       const saved=await request('tools/call',{name:'save_structure_snapshot',arguments:{name,data:btoa(binary),destination:local?'native':'server',...(!local?{directory:$("snapshot-directory").value.trim()}:{}),...(fileRef?.token?{token:fileRef.token}:{})}},660000);

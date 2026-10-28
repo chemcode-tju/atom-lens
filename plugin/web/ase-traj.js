@@ -26,9 +26,11 @@ const ASETrajectory = (() => {
       const data=await meta(index),header=data['numbers.']?data:first;
       const numbers=await array(header,'numbers'),positions=await array(data,'positions');
       if(numbers.length!==positions.length||!numbers.length||numbers.length>100000)throw Error('ASE 原子数无效');
+      const masses=header['masses.']?await array(header,'masses'):null;
+      if(masses&&(masses.length!==numbers.length||masses.some(m=>!Number.isFinite(m)||m<=0)))throw Error('ASE 原子质量无效');
       const cell=data.cell||[[0,0,0],[0,0,0],[0,0,0]],pbc=header.pbc||[false,false,false];
-      const rows=[numbers.length,`Lattice="${cell.flat().join(' ')}" Properties=species:S:1:pos:R:3 pbc="${pbc.map(v=>v?'T':'F').join(' ')}"`];
-      numbers.forEach((z,i)=>{if(!Number.isInteger(z)||z<1||!elements[z]||positions[i].length!==3||positions[i].some(v=>!Number.isFinite(v)))throw Error('ASE 元素或坐标无效');rows.push(`${elements[z]} ${positions[i].join(' ')}`);});
+      const rows=[numbers.length,`Lattice="${cell.flat().join(' ')}" Properties=species:S:1:pos:R:3${masses?':mass:R:1':''} pbc="${pbc.map(v=>v?'T':'F').join(' ')}"`];
+      numbers.forEach((z,i)=>{if(!Number.isInteger(z)||z<1||!elements[z]||positions[i].length!==3||positions[i].some(v=>!Number.isFinite(v)))throw Error('ASE 元素或坐标无效');rows.push(`${elements[z]} ${positions[i].join(' ')}${masses?' '+masses[i]:''}`);});
       return rows.join('\n')+'\n';
     }};
   }

@@ -29,7 +29,7 @@ for(const normal of [[0,0,1],[1,0,0],[.3,.4,.5]])for(const distance of [Infinity
   const mesh=outlineRing(center,1.28,normal,.03,distance),n=normal.map(v=>v/Math.hypot(...normal));
   const offset=Number.isFinite(distance)?1.28**2/distance:0;
   for(const p of mesh.vertexArr)assert.ok(Math.abs((p.x-center.x)*n[0]+(p.y-center.y)*n[1]+(p.z-center.z)*n[2]-offset)<1e-10);
-  assert.equal(mesh.faceArr.length,96*6);assert.equal(mesh.color,0x004500);
+  assert.equal(mesh.faceArr.length,48*6);assert.equal(mesh.color,0x004500);
   for(let j=0;j<mesh.faceArr.length;j+=3) {
     const [a,b,c]=mesh.faceArr.slice(j,j+3).map(i=>mesh.vertexArr[i]);
     const u=[b.x-a.x,b.y-a.y,b.z-a.z],v=[c.x-a.x,c.y-a.y,c.z-a.z];
@@ -38,3 +38,8 @@ for(const normal of [[0,0,1],[1,0,0],[.3,.4,.5]])for(const distance of [Infinity
   }
 }
 console.log('Selection silhouette: camera-facing tangent planes, perspective correction and outward faces passed.');
+
+const {toggleIndices,formula}=require('../plugin/web/selection.js');
+assert.deepEqual(toggleIndices([0,1,2],[1,2,3]),[0,3]);
+assert.deepEqual(toggleIndices([0,3],[1,2,3]),[0,1,2]);
+assert.equal(formula([{elem:'H'},{elem:'C'},{elem:'C'},{elem:'C'},{elem:'O'}],[0,1,2,3,4]),'H+3C+O');
