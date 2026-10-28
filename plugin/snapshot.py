@@ -8,6 +8,8 @@ import platform
 import re
 import socket
 import subprocess
+import shutil
+import tempfile
 
 
 def snapshot_context(params: dict[str, Any]) -> dict[str, Any]:
@@ -36,19 +38,26 @@ end run'''
     return Path(result.stdout.strip()) if result.stdout.strip() else None
 
 
-def save_snapshot(params: dict[str, Any]) -> dict[str, Any]:
-    """Save validated image bytes to the explicitly selected destination."""
+def validate_name(name: str) -> None:
+    if not isinstance(name, str) or not re.fullmatch(r"[\w .()\-]{1,100}\.(png|jpeg|pdf|gif|mov|mp4)", name) or name.startswith("."):
+        raise ValueError("文件名称只能包含字母、数字、空格、下划线、圆括号和短横线")
+
+
+def validate_file(path: Path, name: str) -> None:
+    validate_name(name)
+    with path.open("rb") as stream:
+        header = stream.read(16)
+    suffix = Path(name).suffix
+    signatures = {".png": b"\x89PNG\r\n\x1a\n", ".jpeg": b"\xff\xd8\xff", ".pdf": b"%PDF-", ".gif": b"GIF8"}
+    valid = header.startswith(signatures[suffix]) if suffix in signatures else header[4:8] == b"ftyp"
+    if not valid:
+        raise ValueError("文件内容与扩展名不符")
+
+
+def save_file(source: Path, name: str, params: dict[str, Any]) -> dict[str, Any]:
+    """Save a staged export without copying the complete file into memory."""
+    validate_file(source, name)
     arguments = params.get("arguments", {})
-    name = arguments.get("name", "")
-    if not isinstance(name, str) or not re.fullmatch(r"[\w .()\-]{1,100}\.(png|jpeg|pdf)", name) or name.startswith("."):
-        raise ValueError("图片名称只能包含字母、数字、空格、下划线、圆括号和短横线")
-    encoded = arguments.get("data", "")
-    if not isinstance(encoded, str) or len(encoded) > 24 * 1048576:
-        raise ValueError("截图超过 18 MiB 上限")
-    data = base64.b64decode(encoded, validate=True)
-    signatures = {".png": b"\x89PNG\r\n\x1a\n", ".jpeg": b"\xff\xd8\xff", ".pdf": b"%PDF-"}
-    if not data.startswith(signatures[Path(name).suffix]):
-        raise ValueError("图片内容与扩展名不符")
     context = snapshot_context(params)
     destination = arguments.get("destination", "server")
     if destination == "native":
@@ -71,8 +80,20 @@ def save_snapshot(params: dict[str, Any]) -> dict[str, Any]:
         target = directory / (name if number == 0 else f"{Path(name).stem}-{number}{Path(name).suffix}")
         try:
             with target.open("xb") as stream:
-                stream.write(data)
-            return {"path": str(target), "bytes": len(data)}
+                with source.open("rb") as incoming:
+                    shutil.copyfileobj(incoming, stream, length=1024 * 1024)
+            return {"path": str(target), "bytes": target.stat().st_size}
         except FileExistsError:
             continue
     raise ValueError("同名图片过多，请使用其他文件名")
+
+
+def save_snapshot(params: dict[str, Any]) -> dict[str, Any]:
+    """Compatibility route for earlier viewers; current exports use chunked uploads."""
+    arguments = params.get("arguments", {})
+    name = arguments.get("name", "")
+    validate_name(name)
+    with tempfile.TemporaryDirectory(prefix="structure-snapshot-") as temporary:
+        source = Path(temporary) / name
+        source.write_bytes(base64.b64decode(arguments.get("data", ""), validate=True))
+        return save_file(source, name, params)

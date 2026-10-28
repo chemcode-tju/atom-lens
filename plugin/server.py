@@ -1,7 +1,7 @@
 """Dependency-free MCP server for the native Codex file-editor entrypoint."""
 
 # Configuration
-plugin_version = "0.8.2"
+plugin_version = "0.9.0"
 resource_uri = "ui://structure-viewer/editor.html"
 
 from pathlib import Path
@@ -14,6 +14,9 @@ from trajectory import read_frames
 from snapshot import save_snapshot, snapshot_context
 from local_export import prepare_local_snapshot, snapshot_save_status
 from path_access import StructurePaths
+from media_export import MediaExports
+
+media_exports = MediaExports()
 
 selected_paths = StructurePaths()
 
@@ -34,7 +37,9 @@ def widget_html() -> str:
         ("/*__SNAPSHOT__*/", "snapshot.js"),
         ("/*__SELECTION__*/", "selection.js"),
         ("/*__VIEWPORT__*/", "viewport.js"),
+        ("/*__CONTROLS__*/", "controls.js"),
         ("/*__APP__*/", "app.js"),
+        ("/*__ANIMATION__*/", "animation.js"),
     ]:
         asset = (plugin_root / "web" / filename).read_text()
         if filename == "vendor/3Dmol-min.js":
@@ -75,6 +80,18 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
         return {}
     if method == "tools/list":
         return {"tools": [tool_descriptor(), {
+            "name": "structure_media_export", "title": "Export structure images and animations",
+            "description": "User-requested chunked PNG/JPEG/PDF and GIF/MOV/MP4 export, with native Mac or server saving.",
+            "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
+                "action": {"type": "string", "enum": ["begin", "append", "finish", "status", "save", "cancel"]},
+                "id": {"type": "string"}, "kind": {"type": "string", "enum": ["image", "animation"]},
+                "name": {"type": "string"}, "fps": {"type": "number", "exclusiveMinimum": 0},
+                "chunk": {"type": "integer", "minimum": 0}, "data": {"type": "string"}, "last": {"type": "boolean"},
+                "destination": {"type": "string", "enum": ["native", "server", "helper"]},
+                "directory": {"type": "string"}, "token": {"type": "string"}}, "required": ["action"]},
+            "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False},
+            "_meta": {"ui": {"visibility": ["app"]}},
+        }, {
             "name": "open_structure_path", "title": "Structure Viewer",
             "description": "Open an atomic structure in the viewer using its unchanged absolute path on this host, including bare POSCAR, CONTCAR and XDATCAR. Omit path to open the structure browser. Use this for user-requested VASP viewing instead of renaming or copying files.",
             "inputSchema": {"type": "object", "additionalProperties": False,
@@ -151,6 +168,13 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
         batch = read_frames(selected_paths.bind(params))
         return {"content": [{"type": "text", "text": f"Read {batch.get('frameCount', 0)} frames"}],
                 "structuredContent": batch}
+    if method == "tools/call" and params.get("name") == "structure_media_export":
+        arguments = params.get("arguments", {})
+        action = arguments.get("action")
+        if action not in {"begin", "append", "finish", "status", "save", "cancel"}:
+            raise ValueError("未知导出操作")
+        result = media_exports.save(selected_paths.bind(params)) if action == "save" else getattr(media_exports, action)(arguments)
+        return {"content": [], "structuredContent": result}
     if method == "tools/call" and params.get("name") == "snapshot_save_status":
         result = snapshot_save_status(params.get("arguments", {}))
         return {"content": [{"type": "text", "text": json.dumps(result)}], "structuredContent": result}

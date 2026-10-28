@@ -155,7 +155,12 @@ class StructureViews {
       const inverse=new $3Dmol.Matrix4().getInverse(viewer.modelGroup.matrixWorld);
       const camera=viewer.camera.position.clone().applyMatrix4(inverse);
       const q=view.slice(4,8),[x,y,z,w]=q;
-      const forward=[2*(x*z-y*w),2*(y*z+x*w),1-2*(x*x+y*y)];
+      const forward=[inverse.elements[8],inverse.elements[9],inverse.elements[10]];
+      for(const {label,atom,radius} of pane.atomLabels||[]) {
+        const delta=pane.preset==='perspective'?[camera.x-atom.x,camera.y-atom.y,camera.z-atom.z]:forward;
+        const norm=Math.hypot(...delta),offset=radius*1.01;
+        label.sprite.position.set(atom.x+delta[0]/norm*offset,atom.y+delta[1]/norm*offset,atom.z+delta[2]/norm*offset);
+      }
       let combined={vertexArr:[],normalArr:[],faceArr:[],color:0x004500,opacity:1};
       const flush=()=>{if(combined.vertexArr.length)pane.markerShapes.push(viewer.addCustom(combined));combined={vertexArr:[],normalArr:[],faceArr:[],color:0x004500,opacity:1};};
       for(const {atom,radius} of pane.markers||[]) {
@@ -220,10 +225,11 @@ class StructureViews {
     const {pane,exporter}=this.exportView;
     pane.canvas.style.width=width+'px';pane.canvas.style.height=height+'px';pane.element.style.width=width+'px';pane.element.style.height=height+'px';
     pane.viewer.resize();pane.preset=this.panes[this.active].preset;
-    exporter.render(this.latest[0],this.latest[1],[],false);
+    exporter.render(this.latest[0],{...this.latest[1],labelScale:width/this.panes[this.active].canvas.clientWidth},[],false);
     pane.viewer.setProjection(pane.preset==='perspective'?'perspective':'orthographic');
     pane.viewer.setView(this.panes[this.active].viewer.getView());
     pane.viewer.setBackgroundColor('#ffffff',0);pane.viewer.render();
+    exporter.drawSelection(pane);
     return pane;
   }
   render(frame, options, selected, reset) {
@@ -247,6 +253,7 @@ class StructureViews {
       const viewer = pane.viewer, previous = viewer.getView();
       const initialize = !pane.ready;
       this.setLighting(viewer, options.lighting);
+      pane.drawingSelection=true;
       pane.markers=[];pane.markerShapes=[];pane.markerView=null;
       viewer.removeAllModels(); viewer.removeAllShapes(); viewer.removeAllLabels();
       // Build only visible atoms, so hidden atoms cannot leave bonds or click targets.
@@ -279,7 +286,13 @@ class StructureViews {
           viewer.addCylinder({start:p(i),end:p(Math.min(i+1,steps)),radius:0.035,color:0x3699ae,fromCap:1,toCap:1});
         }
       }
-      if (options.labels) this.visibleIndices.forEach(i => {const atom=frame.atoms[i];viewer.addLabel(`${atom.elem}${i+1}`, {position:atom, fontSize:11, fontColor:"#222222", showBackground:false}, undefined, true);});
+      pane.atomLabels=[];
+      if(options.labels)this.visibleIndices.forEach(i=>{
+        const atom=frame.atoms[i],rule=rules[i];
+        const radius=rule.style==='stick'?.19:StructureAppearance.radius(atom.elem)*options.scale*(rule.style==='ballstick'?.45:1);
+        const label=viewer.addLabel(String(i+1),{position:atom,font:'Arial',fontSize:13*(options.labelScale||1),bold:true,fontColor:'#000000',showBackground:false,inFront:false,alignment:'center'},undefined,true);
+        pane.atomLabels.push({atom,radius,label});
+      });
       this.prepareSelection(pane,frame,options,selected);
       pane.ready = true;
       if (reset || initialize) this.orient(pane, pane.preset);
@@ -287,7 +300,8 @@ class StructureViews {
         if (this.follow) previous.splice(0,3,-this.follow.x,-this.follow.y,-this.follow.z);
         viewer.setView(previous);
       }
-      if (!pane.element.hidden) viewer.render();
+      pane.drawingSelection=false;pane.markerView=null;
+      if (!pane.element.hidden) { viewer.render(); this.drawSelection(pane); }
     }
   }
 }

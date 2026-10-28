@@ -1,8 +1,6 @@
 #import <Cocoa/Cocoa.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
-// Configuration
-static const NSUInteger MaximumPayloadBytes = 26 * 1024 * 1024;
 
 @interface SnapshotSaver : NSObject <NSApplicationDelegate>
 @property NSStatusItem *statusItem;
@@ -28,7 +26,7 @@ static const NSUInteger MaximumPayloadBytes = 26 * 1024 * 1024;
 - (NSString *)save:(NSData *)data name:(NSString *)name {
     [NSApp activateIgnoringOtherApps:YES];
     NSSavePanel *panel = [NSSavePanel savePanel];
-    panel.title = @"保存结构快照"; panel.nameFieldStringValue = name;
+    panel.title = @"保存结构图像或动画"; panel.nameFieldStringValue = name;
     panel.allowedContentTypes = @[[UTType typeWithFilenameExtension:name.pathExtension]];
     panel.canCreateDirectories = YES;
     panel.directoryURL = [[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask].firstObject;
@@ -43,11 +41,13 @@ static const NSUInteger MaximumPayloadBytes = 26 * 1024 * 1024;
 - (NSString *)receive:(NSDictionary *)snapshot {
     NSString *name = snapshot[@"name"], *encoded = snapshot[@"data"];
     NSData *image = [encoded isKindOfClass:NSString.class] ? [[NSData alloc] initWithBase64EncodedString:encoded options:0] : nil;
-    NSDictionary *signatures = @{@"png": @[@137,@80,@78,@71,@13,@10,@26,@10], @"jpeg": @[@255,@216,@255], @"pdf": @[@37,@80,@68,@70,@45]};
+    NSDictionary *signatures = @{@"png": @[@137,@80,@78,@71,@13,@10,@26,@10], @"jpeg": @[@255,@216,@255], @"pdf": @[@37,@80,@68,@70,@45], @"gif": @[@71,@73,@70,@56]};
     NSArray *signature = [name isKindOfClass:NSString.class] ? signatures[name.pathExtension] : nil;
-    BOOL valid = image.length && image.length <= 18 * 1024 * 1024 && signature &&
+    BOOL movie = [@[@"mp4",@"mov"] containsObject:name.pathExtension];
+    BOOL valid = image.length && (signature || movie) &&
                  [name isEqualToString:name.lastPathComponent] && image.length >= signature.count;
     for (NSUInteger i = 0; valid && i < signature.count; i++) valid = ((const unsigned char *)image.bytes)[i] == [signature[i] unsignedCharValue];
+    if (movie) valid = valid && image.length >= 12 && memcmp(((const char *)image.bytes)+4, "ftyp", 4) == 0;
     if (!valid) return @"error";
     __block NSString *result;
     dispatch_sync(dispatch_get_main_queue(), ^{ result = [self save:image name:name]; });
@@ -70,7 +70,6 @@ static const NSUInteger MaximumPayloadBytes = 26 * 1024 * 1024;
                         NSData *block = [output.fileHandleForReading availableData];
                         if (!block.length) break;
                         [buffer appendData:block];
-                        if (buffer.length > MaximumPayloadBytes) break;
                         while (YES) {
                             NSRange newline = [buffer rangeOfData:[NSData dataWithBytes:"\n" length:1] options:0 range:NSMakeRange(0,buffer.length)];
                             if (newline.location == NSNotFound) break;

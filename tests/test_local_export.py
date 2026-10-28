@@ -1,4 +1,4 @@
-"""Validate the bounded nd3-to-Mac snapshot staging boundary."""
+"""Validate image format and private nd3-to-Mac staging."""
 from pathlib import Path
 import base64
 import json
@@ -37,12 +37,11 @@ class LocalExportTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "未连接"):
                 prepare_local_snapshot({"name": "a.png", "data": base64.b64encode(b"\x89PNG\r\n\x1a\n").decode()})
 
-    def test_reject_invalid_name_content_and_size(self) -> None:
+    def test_reject_invalid_name_and_content(self) -> None:
         for arguments in [
             {"name": "../image.png", "data": ""}, {"name": None, "data": ""},
             {"name": "image.png", "data": "not-base64"},
             {"name": "image.pdf", "data": base64.b64encode(b"\x89PNG\r\n\x1a\n").decode()},
-            {"name": "image.png", "data": "a" * (24 * 1048576 + 1)},
         ]:
             with self.subTest(arguments=arguments["name"]), self.assertRaises(ValueError):
                 prepare_local_snapshot(arguments)

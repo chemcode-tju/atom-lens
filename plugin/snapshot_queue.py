@@ -10,6 +10,7 @@ import re
 import select
 import sys
 import time
+import threading
 
 from local_export import export_folder
 
@@ -22,6 +23,12 @@ def watch() -> None:
         state = claimed.with_suffix(".status")
         if state.exists() and state.read_text() == "choosing":
             state.write_text("error")
+    # Continue the connection heartbeat even while SSH sends a large export.
+    def heartbeat() -> None:
+        while True:
+            (folder / "helper-heartbeat").touch()
+            time.sleep(poll_interval)
+    threading.Thread(target=heartbeat, daemon=True).start()
     pending: str | None = None
     (folder / "helper-heartbeat").touch()
     print(json.dumps({"kind": "ready"}), flush=True)

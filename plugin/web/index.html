@@ -2,7 +2,7 @@
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Structure Viewer</title><style>/*__STYLE__*/</style></head>
 <body>
 <main>
-  <header><h1 id="filename">Structure Viewer</h1><div class="file-actions"><button id="open-path">按路径打开</button><button id="open-file">本地文件</button><input id="file-picker" type="file" hidden><button id="snapshot">快照</button><button id="display-settings">显示设置</button><button id="source-toggle">源码</button></div></header>
+  <header><h1 id="filename">Structure Viewer</h1><div class="file-actions"><button id="open-path">按路径打开</button><button id="open-file">本地文件</button><input id="file-picker" type="file" hidden><button id="snapshot">快照</button><button id="animation-export">导出动画</button><button id="display-settings">显示设置</button><button id="source-toggle">源码</button></div></header>
   <div class="toolbar">
     <select id="style" aria-label="显示方式"><option value="sphere">原子球</option><option value="ballstick">球棍</option><option value="stick">线棒</option></select>
     <select id="palette" aria-label="原子配色"><option value="jmol">Jmol</option><option value="rasmol">RasMol / CPK</option><option value="vesta">VESTA</option></select>
@@ -23,14 +23,16 @@
     <div class="follow-row"><button id="drift-settings">质心漂移校正…</button></div>
   </footer>
 </main>
-<dialog id="drift-dialog"><h2>质心漂移校正</h2><fieldset>
+<dialog id="drift-dialog" class="floating-panel"><h2>质心漂移校正</h2><fieldset>
 <label class="check-row"><input id="drift-enabled" type="checkbox">移除轨迹的质心漂移</label>
 <label>参考帧编号（从 0 开始）<input id="drift-reference" type="number" min="0" value="0"></label>
-<label class="check-row"><input id="drift-selected" type="checkbox">仅使用选中原子计算质心</label>
-<p>输入轨迹需为连续、未折回的坐标。所有原子统一平移，晶胞不动。</p></fieldset>
+<label>计算范围<select id="drift-source"><option value="all">全部原子</option><option value="indices">指定原子</option></select></label>
+<label>原子序号（从 1 开始）<input id="drift-atoms" placeholder="1, 3, 5-12"></label>
+<button id="drift-use-selection">填入当前选择</button><output id="drift-state">未启用</output>
+<p>依据原始坐标校正，再应用 Wrap。点“应用”保存原子组，后续选择不会改变它。原始轨迹应使用连续、未折回的坐标。</p></fieldset>
 <output id="drift-error" role="alert"></output><div class="dialog-actions"><button id="drift-close">关闭</button><button id="drift-apply">应用</button></div></dialog>
 <dialog id="path-dialog"><h2>打开结构文件</h2><label for="structure-path" id="path-host">当前主机上的完整路径</label><input id="structure-path" type="text" placeholder="/完整路径/POSCAR" autocomplete="off" spellcheck="false"><output id="path-error" role="alert"></output><div class="dialog-actions"><button id="path-close">关闭</button><button id="path-load">打开</button></div></dialog>
-<dialog id="display-dialog">
+<dialog id="display-dialog" class="floating-panel">
   <h2>显示设置</h2>
   <fieldset><legend>元素显隐</legend><div id="element-list"></div><button id="show-elements">全部显示</button></fieldset>
   <fieldset><legend id="selection-count">选中原子</legend>
@@ -43,11 +45,11 @@
 </dialog>
 <dialog id="playback-dialog">
   <form method="dialog"><h2>播放设置</h2>
-  <fieldset><legend>Animation</legend><label>Frames per second <input id="animation-fps" type="number" min="1" max="120" value="60"></label></fieldset>
-  <fieldset><legend>Playback in interactive viewports</legend>
-  <label>Playback speed <select id="playback-speed"><option value="0.25">× 0.25</option><option value="0.5">× 0.5</option><option value="1" selected>× 1</option><option value="2">× 2</option><option value="5">× 5</option><option value="10">× 10</option><option value="20">× 20</option></select></label>
-  <label>Every Nth frame <input id="playback-step" type="number" min="1" max="10000" value="1"></label>
-  <label class="check-row"><input id="playback-loop" type="checkbox" checked>Loop playback</label></fieldset>
+  <fieldset><legend>动画</legend><label>每秒帧数 <input id="animation-fps" type="number" min="1" max="120" value="60"></label></fieldset>
+  <fieldset><legend>视窗内播放</legend>
+  <label>播放速度 <select id="playback-speed"><option value="0.25">× 0.25</option><option value="0.5">× 0.5</option><option value="1" selected>× 1</option><option value="2">× 2</option><option value="5">× 5</option><option value="10">× 10</option><option value="20">× 20</option></select></label>
+  <label>每隔 N 帧播放 <input id="playback-step" type="number" min="1" max="10000" value="1"></label>
+  <label class="check-row"><input id="playback-loop" type="checkbox" checked>循环播放</label></fieldset>
   <div class="dialog-actions"><button value="cancel">取消</button><button id="playback-apply" value="default">确定</button></div></form>
 </dialog>
 <dialog id="snapshot-dialog">
@@ -60,6 +62,17 @@
   <label id="snapshot-directory-row" hidden>目录 <input id="snapshot-directory" placeholder="结构所在目录"></label></div>
   <output id="snapshot-result"></output><div class="dialog-actions"><button id="snapshot-close">关闭</button><button id="snapshot-save">保存</button></div>
 </dialog>
+<dialog id="animation-dialog"><h2>导出动画</h2>
+<fieldset id="animation-fields"><label>文件名<input id="animation-name" value="trajectory" maxlength="80"></label>
+<label>格式<select id="animation-format"><option value="mp4">MP4</option><option value="mov">MOV</option><option value="gif">GIF</option></select></label>
+<label>起始帧（从 1 开始）<input id="animation-start" type="number" min="1" value="1"></label>
+<label>结束帧<input id="animation-end" type="number" min="1" value="1"></label>
+<label>每隔 N 帧导出<input id="animation-stride" type="number" min="1" value="1"></label>
+<label>基础帧率<input id="animation-rate" type="number" min="1" value="30"></label>
+<label>播放速度<select id="animation-speed"><option value="0.25">× 0.25</option><option value="0.5">× 0.5</option><option value="1" selected>× 1</option><option value="2">× 2</option><option value="5">× 5</option><option value="10">× 10</option></select></label>
+<label>保存到<select id="animation-destination"><option value="local">本地 Mac</option><option value="server">服务器</option></select></label>
+<label id="animation-directory-row">目录<input id="animation-directory" placeholder="结构所在目录"></label></fieldset>
+<output id="animation-result"></output><div class="dialog-actions"><button id="animation-close">关闭</button><button id="animation-save">导出并保存</button></div></dialog>
 <script>/*__3DMOL__*/</script><script>/*__PARSER__*/</script><script>/*__APPEARANCE__*/</script><script>/*__GEOMETRY__*/</script><script>/*__ASE_TRAJ__*/
-/*__VASP_STREAM__*/</script><script>/*__SNAPSHOT__*/</script><script>/*__SELECTION__*/</script><script>/*__VIEWPORT__*/</script><script>/*__APP__*/</script>
+/*__VASP_STREAM__*/</script><script>/*__SNAPSHOT__*/</script><script>/*__SELECTION__*/</script><script>/*__VIEWPORT__*/</script><script>/*__CONTROLS__*/</script><script>/*__APP__*/</script><script>/*__ANIMATION__*/</script>
 </body></html>

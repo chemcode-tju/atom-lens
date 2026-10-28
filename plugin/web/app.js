@@ -10,13 +10,13 @@ let snapshotHost = null;
 let playback = {fps:60, speed:1, step:1, loop:true};
 function afterPaint(callback) { requestAnimationFrame(() => setTimeout(callback, 0)); }
 function scheduleRender(reset = false) { const ticket=++paintTicket; afterPaint(() => { if(ticket===paintTicket)render(reset); }); }
-function clearFollow() { drift=null;$("drift-enabled").checked=false; }
+function clearFollow() { drift=null;$("drift-enabled").checked=false;$("drift-state").textContent="未启用"; }
 function displayedFrame() {
   let frame=frameData;
   if(drift) {
     const reference=doc.frame(drift.reference);
-    const currentIndices=drift.selected?selection:frame.atoms.map((_,i)=>i);
-    const referenceIndices=StructureSelection.remap(frame,reference,currentIndices);
+    const referenceIndices=drift.indices;
+    const currentIndices=StructureSelection.remap(reference,frame,referenceIndices);
     frame=StructureGeometry.removeDrift(frame,reference,currentIndices,referenceIndices);
   }
   return $("wrap").checked?StructureGeometry.wrap(frame):frame;
@@ -37,20 +37,15 @@ function updateTimeline() {
   $("timeline").max = doc.count - 1; $("timeline").value = frameIndex; $("timeline").disabled = doc.count < 2;
   $("frame-number").max = doc.count; $("frame-number").value = frameIndex + 1;
   $("frame-count").textContent = `/ ${doc.count}${streamComplete ? "" : "+"}`;
-  const maxTicks = Math.max(2, Math.floor($("ticks").clientWidth / 45));
-  const rough = Math.max(1, (doc.count - 1) / maxTicks);
-  const base = 10 ** Math.floor(Math.log10(rough));
-  const step = [1, 2, 5, 10].find(n => n * base >= rough) * base;
-  const marks = [1];
-  for (let n = step; n < doc.count - step * 0.45; n += step) if (n > 1) marks.push(n);
-  if (doc.count > 1) marks.push(doc.count);
-  $("ticks").replaceChildren(...marks.map(n => {
-    const span = document.createElement("span"); span.textContent = n;
-    span.style.left = `${(n - 1) / Math.max(1, doc.count - 1) * 100}%`;
-    return span;
+  const width=$("ticks").clientWidth;
+  const canvas=document.createElement('canvas'),context=canvas.getContext('2d');
+  context.font=getComputedStyle($("ticks")).font;
+  const marks=StructureControls.timelineTicks(doc.count,width,text=>context.measureText(text).width);
+  $("ticks").replaceChildren(...marks.map(({value,x})=>{
+    const span=document.createElement('span');span.textContent=value;span.style.left=x+'px';return span;
   }));
 }
-function render(reset = false) {
+function render(reset = false, strict = false) {
   if (!doc) return;
   try {
     frameData = doc.frame(frameIndex);
@@ -63,7 +58,7 @@ function render(reset = false) {
     if (!$("source-panel").hidden) $("source").value = doc.frameText(frameIndex);
     $("source-title").textContent = doc.vaspPreview ? `第 ${frameIndex + 1} 帧 VASP 源码` : doc.xyz ? `第 ${frameIndex + 1} 帧源码` : "VASP 文件源码";
     updateSelection();
-  } catch (error) { stop(); status(error.message, true); }
+  } catch (error) { stop(); status(error.message, true); if(strict)throw error; }
 }
 function updateSelection() {
   $("atom-title").textContent=selection.length?`已选 ${selection.length}`:'';
@@ -77,7 +72,6 @@ function updateSelection() {
 }
 function selectionChanged() {
   stop();
-  if(drift?.selected){if(!selection.length){clearFollow();}render();return;}
   updateSelection();
   const ticket=++paintTicket;
   afterPaint(()=>{if(ticket===paintTicket)views?.updateSelection(selection);});
@@ -100,7 +94,7 @@ function populateElements() {
   updateSelection();
 }
 $("clear-selection").onclick=()=>{selection=[];selectionChanged();};
-$("display-settings").onclick=()=>{stop();populateElements();$("display-dialog").showModal();};
+$("display-settings").onclick=()=>{stop();populateElements();openPanel($("display-dialog"));};
 $("display-close").onclick=()=>$("display-dialog").close();
 $("show-elements").onclick=()=>{displayState.hiddenElements.clear();populateElements();scheduleRender();};
 $("apply-display").onclick=()=>{
@@ -118,8 +112,8 @@ function go(index) {
   frameIndex=target;status("");
   let driftStopped=false;
   if(drift){
-    const indices=drift.selected?selection:nextFrame.atoms.map((_,i)=>i);
-    if(!indices.length||StructureSelection.remap(nextFrame,doc.frame(drift.reference),indices).length!==indices.length){clearFollow();driftStopped=true;}
+    const indices=StructureSelection.remap(doc.frame(drift.reference),nextFrame,drift.indices);
+    if(indices.length!==drift.indices.length){clearFollow();driftStopped=true;}
   }
   render();
   if(driftStopped)status('当前帧的原子无法与参考帧对应，已停用质心校正',true);
@@ -246,25 +240,38 @@ $("expand").onclick = () => views?.toggleExpand();
 for (const mode of ["rotate", "pan", "zoom", "select", "box"]) $(mode).onclick = () => views?.setMode(mode);
 $("first").onclick = () => { stop(); go(0); };
 $("last").onclick = () => { stop(); if (doc) go(doc.count - 1); };
-for (const id of ["style", "palette", "radius-scale", "cell", "labels", "hbonds", "wrap"]) $(id).onchange = () => { stop(); status(""); scheduleRender(id==="wrap"); };
+for (const id of ["style", "palette", "radius-scale", "cell", "labels", "hbonds", "wrap"]) $(id).onchange = () => { stop(); status(""); scheduleRender(); };
+function openPanel(panel) { if(!panel.open)panel.show(); }
+for(const id of ['display-dialog','drift-dialog'])StructureControls.draggable($(id));
+new ResizeObserver(()=>updateTimeline()).observe($("ticks"));
 $("drift-settings").onclick=()=>{
-  stop();$("drift-reference").max=Math.max(0,(doc?.count||1)-1);
-  $("drift-dialog").showModal();
+  $("drift-reference").max=Math.max(0,(doc?.count||1)-1);
+  openPanel($("drift-dialog"));
 };
 $("drift-close").onclick=()=>$("drift-dialog").close();
+$("drift-use-selection").onclick=()=>{
+  $("drift-atoms").value=selection.map(i=>i+1).join(', ');
+  $("drift-source").value='indices';
+};
 $("drift-apply").onclick=()=>{
   if(!doc)return;
   try {
-    const reference=Number($("drift-reference").value),selected=$("drift-selected").checked;
+    const reference=Number($("drift-reference").value);
     if(!Number.isInteger(reference)||reference<0||reference>=doc.count)throw Error('参考帧尚未加载或超出范围');
-    if($("drift-enabled").checked&&selected&&!selection.length)throw Error('请先选中用于计算质心的原子');
-    drift=$("drift-enabled").checked?{reference,selected}:null;
-    if(drift)$("wrap").checked=false;
-    displayedFrame();$("drift-error").textContent='';$("drift-dialog").close();render();
-  }catch(error){drift=null;$("drift-error").textContent=error.message;}
+    let candidate=null;
+    if($("drift-enabled").checked){
+      const currentIndices=$("drift-source").value==='all'?frameData.atoms.map((_,i)=>i):StructureControls.atomIndices($("drift-atoms").value,frameData.atoms.length);
+      const indices=StructureSelection.remap(frameData,doc.frame(reference),currentIndices);
+      if(indices.length!==currentIndices.length)throw Error('所指定原子无法与参考帧对应');
+      candidate={reference,indices};
+      StructureGeometry.removeDrift(frameData,doc.frame(reference),currentIndices,indices);
+    }
+    drift=candidate;$("drift-error").textContent='';render();
+    $("drift-state").textContent=drift?`已应用：${drift.indices.length} 个原子 · 参考帧 ${reference}`:'未启用';
+  }catch(error){$("drift-error").textContent=error.message;}
 };
 $("source-toggle").onclick = () => { stop(); $("source-panel").hidden = !$("source-panel").hidden; if(doc)$("source").value=doc.frameText(frameIndex); };
-request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.8.2" }, appCapabilities: {} })
+request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.9.0" }, appCapabilities: {} })
   .then(() => { send("ui/notifications/initialized", {}); status("已连接，等待文件…"); })
   .catch(error => status(`连接失败：${error.message}`, true));
 
@@ -338,32 +345,13 @@ $("snapshot-save").onclick=async()=>{
   const result=snapshotData,format=$("snapshot-format").value,name=$("snapshot-name").value+'.'+format;
   if(!/^[\p{L}\p{N}_ .()\-]{1,100}\.(png|jpeg|pdf)$/u.test(name)||name.startsWith('.')){$("snapshot-result").textContent='请使用字母、数字、中文、空格、下划线或短横线命名';return;}
   $("snapshot-save").disabled=true;$("snapshot-close").disabled=true;
+  let job;
   try {
-    const local=$("snapshot-destination").value==='local';
-    if(local&&!snapshotHost.nativePicker){
-      let binary='';for(let i=0;i<result.bytes.length;i+=32768)binary+=String.fromCharCode(...result.bytes.subarray(i,i+32768));
-      const prepared=await request('tools/call',{name:'prepare_local_snapshot',arguments:{name,data:btoa(binary)}});
-      const id=prepared.structuredContent?.id;
-      if(!id)throw Error('无法准备本地快照：'+(prepared.content?.find(c=>c.text)?.text||'服务器未返回文件'));
-      $("snapshot-result").textContent='请在 Mac 系统窗口选择保存位置…';
-      let completed=false;
-      for(let attempt=0;attempt<330;attempt++){
-        await new Promise(resolve=>setTimeout(resolve,2000));
-        const reply=await request('tools/call',{name:'snapshot_save_status',arguments:{id}});
-        if(reply.isError)throw Error(reply.content?.find(c=>c.text)?.text||'无法确认保存状态');
-        const state=reply.structuredContent?.status;
-        if(state==='saved'||state==='cancelled'){$("snapshot-result").textContent=state==='saved'?'已保存到本地 Mac':'已取消保存';completed=true;break;}
-        if(['error','disconnected','expired'].includes(state))throw Error({error:'Mac 保存失败，请查看系统窗口',disconnected:'Mac 保存助手已断开，请重新打开助手后重试',expired:'保存请求已过期，请重试'}[state]);
-      }
-      if(!completed)throw Error('等待 Mac 保存结果超时，请检查系统窗口');
-    }else{
-      let binary='';for(let i=0;i<result.bytes.length;i+=32768)binary+=String.fromCharCode(...result.bytes.subarray(i,i+32768));
-      const saved=await request('tools/call',{name:'save_structure_snapshot',arguments:{name,data:btoa(binary),destination:local?'native':'server',...(!local?{directory:$("snapshot-directory").value.trim()}:{}),...(fileRef?.token?{token:fileRef.token}:{})}},660000);
-      if(saved.isError)throw Error(saved.content?.find(c=>c.text)?.text||'保存失败');
-      if(saved.structuredContent?.cancelled){$("snapshot-result").textContent='已取消保存';return;}
-      if(!saved.structuredContent?.path)throw Error('宿主未确认保存路径');$("snapshot-result").textContent='已保存：'+saved.structuredContent.path;
-    }
-  }catch(error){$("snapshot-result").textContent=error.message;}finally{$("snapshot-save").disabled=false;$("snapshot-close").disabled=false;}
+    job=await mediaCall({action:'begin',kind:'image',name});
+    await uploadMedia(job.id,result.bytes);
+    await saveMedia(job.id,snapshotHost,'snapshot');
+  }catch(error){$("snapshot-result").textContent=error.message;}
+  finally{if(job)await mediaCall({action:'cancel',id:job.id}).catch(()=>{});$("snapshot-save").disabled=false;$("snapshot-close").disabled=false;}
 };
 
 $("open-path").onclick=async()=>{

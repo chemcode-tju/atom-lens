@@ -38,10 +38,11 @@ const StructureSnapshot = (() => {
     const canvas=pane.canvas.querySelector('canvas');
     const pixelRatio=canvas.width/originalWidth,scale=dpi/96;
     const width=Math.round(originalWidth*scale),height=Math.round(originalHeight*scale);
-    if(width>8192||height>8192||width*height>20000000)throw Error('输出超过 2000 万像素或单边 8192 像素，请降低 DPI');
+
     const exported=views.exportPane(width/pixelRatio,height/pixelRatio);
     const gl=exported.viewer.getRenderer().getContext();
     const w=gl.drawingBufferWidth,h=gl.drawingBufferHeight;
+    if(!w||!h||Math.abs(w-width)>Math.ceil(pixelRatio)||Math.abs(h-height)>Math.ceil(pixelRatio))throw Error(`显卡未能创建 ${width}×${height} 的画布（实际 ${w}×${h}）`);
     const pixels=new Uint8Array(w*h*4);gl.readPixels(0,0,w,h,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
     const raw=document.createElement('canvas');raw.width=w;raw.height=h;
     const ctx=raw.getContext('2d',{willReadFrequently:true}),image=ctx.createImageData(w,h);

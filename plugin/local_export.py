@@ -24,14 +24,19 @@ def helper_connected(folder: Path) -> bool:
 
 def prepare_local_snapshot(arguments: dict[str, Any]) -> dict[str, str]:
     name, encoded = arguments.get("name", ""), arguments.get("data", "")
-    if not isinstance(name, str) or not re.fullmatch(r"[\w .()\-]{1,100}\.(png|jpeg|pdf)", name) or name.startswith("."):
-        raise ValueError("无效图片文件名")
-    if not isinstance(encoded, str) or len(encoded) > 24 * 1048576:
-        raise ValueError("截图超过 18 MiB 上限")
-    data = base64.b64decode(encoded, validate=True)
-    signatures = {".png": b"\x89PNG\r\n\x1a\n", ".jpeg": b"\xff\xd8\xff", ".pdf": b"%PDF-"}
-    if not data.startswith(signatures[Path(name).suffix]):
-        raise ValueError("图片内容与格式不符")
+    from snapshot import validate_name
+    import tempfile
+    validate_name(name)
+    with tempfile.TemporaryDirectory(prefix="structure-stage-") as temporary:
+        path = Path(temporary) / name
+        path.write_bytes(base64.b64decode(encoded, validate=True))
+        return prepare_local_file(path, name)
+
+
+def prepare_local_file(path: Path, name: str) -> dict[str, str]:
+    from snapshot import validate_file
+    validate_file(path, name)
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
     folder = export_folder()
     if not helper_connected(folder):
         raise ValueError("Mac 保存助手未连接，请在 Mac 打开 Structure Snapshot Saver 后重试")
