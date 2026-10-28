@@ -32,7 +32,7 @@ class StructureViews {
     element.querySelector(".view-title").ondblclick = () => { this.activate(index); this.toggleExpand(); };
     element.addEventListener("pointerdown", () => this.activate(index), true);
     element.addEventListener("mousedown", () => this.activate(index), true);
-    viewer.setViewChangeCallback(() => this.drawAxes(pane));
+    viewer.setViewChangeCallback(() => { this.drawAxes(pane); this.drawSelection(pane); });
     new ResizeObserver(() => { if (!element.hidden) { viewer.resize(); if (pane.ready) this.fit(pane); else viewer.render(); } }).observe(canvas);
     const layer = element.querySelector(".pointer-layer");
     let pointer = null;
@@ -128,6 +128,29 @@ class StructureViews {
       return `<line x1="31" y1="46" x2="${endX}" y2="${endY}" stroke="${color}" stroke-width="1.5"/><text x="${endX+3}" y="${endY-3}" fill="${color}">${["x", "y", "z"][index]}</text>`;
     }).join("");
   }
+  drawSelection(pane) {
+    if(pane.drawingSelection||!pane.markers?.length)return;
+    const viewer=pane.viewer,view=viewer.getView(),key=JSON.stringify([view,pane.preset,pane.canvas.clientWidth,pane.canvas.clientHeight]);
+    if(pane.markerView===key)return;
+    pane.drawingSelection=true;
+    try {
+      for(const shape of [...(pane.markerShapes||[])].reverse())viewer.removeShape(shape);
+      pane.markerShapes=[];
+      const inverse=new $3Dmol.Matrix4().getInverse(viewer.modelGroup.matrixWorld);
+      const camera=viewer.camera.position.clone().applyMatrix4(inverse);
+      const q=view.slice(4,8),[x,y,z,w]=q;
+      const forward=[2*(x*z-y*w),2*(y*z+x*w),1-2*(x*x+y*y)];
+      for(const {atom,radius} of pane.markers) {
+        const delta=[camera.x-atom.x,camera.y-atom.y,camera.z-atom.z];
+        const distance=pane.preset==='perspective'?Math.hypot(...delta):Infinity;
+        const normal=Number.isFinite(distance)?delta:forward;
+        const origin=viewer.modelToScreen(atom);
+        const unitsPerPixel=viewer.screenToModelDistance({x:origin.x+2.5,y:origin.y},atom);
+        pane.markerShapes.push(viewer.addCustom(StructureSelection.outlineRing(atom,radius,normal,Math.min(radius*.12,unitsPerPixel),distance)));
+      }
+      pane.markerView=key;viewer.render();
+    } finally {pane.drawingSelection=false;}
+  }
   setLighting(viewer, enabled) {
     // Match the studio shaders bundled by server.py, on screen and in exports.
     const light = viewer.scene?.__lights?.[0];
@@ -163,7 +186,7 @@ class StructureViews {
     this.follow = options.follow || null;
     const rules=frame.atoms.map((atom,index)=>options.display?.resolve(atom,index,options)||{...options,visible:true});
     this.visibleIndices=rules.flatMap((rule,index)=>rule.visible?[index]:[]);
-    const visibleSet=new Set(this.visibleIndices),selectedSet=new Set(selected);
+    const visibleSet=new Set(this.visibleIndices);
     const hydrogenBonds = options.hbonds ? StructureGeometry.hydrogenBonds(frame).filter(b=>visibleSet.has(b.donor)&&visibleSet.has(b.hydrogen)&&visibleSet.has(b.acceptor)) : [];
 
     const vertices = options.cell && frame.cell ? Array.from({length:8}, (_,mask) => Object.fromEntries(["x","y","z"].map((axis,j) => [axis, frame.cell.reduce((sum,v,k) => sum + ((mask>>k)&1)*v[j], 0)]))) : [];
@@ -178,6 +201,7 @@ class StructureViews {
       const viewer = pane.viewer, previous = viewer.getView();
       const initialize = !pane.ready;
       this.setLighting(viewer, options.lighting);
+      pane.markers=[];pane.markerShapes=[];pane.markerView=null;
       viewer.removeAllModels(); viewer.removeAllShapes(); viewer.removeAllLabels();
       // Build only visible atoms, so hidden atoms cannot leave bonds or click targets.
       const visibleAtoms=this.visibleIndices.map(i=>frame.atoms[i]);
@@ -190,7 +214,7 @@ class StructureViews {
         this.visibleIndices.forEach((originalIndex,index)=>{
           const atom=frame.atoms[originalIndex],rule=rules[originalIndex];
           const palette=StructureAppearance.palette(rule.palette,$3Dmol.elementColors);
-          const color=selectedSet.has(originalIndex)?0x2455d9:(rule.palette==='custom'?rule.color:(palette[atom.elem]??0xff1493));
+          const color=rule.palette==='custom'?rule.color:(palette[atom.elem]??0xff1493);
           const radius=StructureAppearance.radius(atom.elem)*options.scale;
           const style=rule.style==='sphere'?{sphere:{radius,color}}:rule.style==='stick'?{stick:{radius:.16,color}}:{sphere:{radius:radius*.45,color},stick:{radius:.10,color}};
           const key=JSON.stringify(style);if(!groups.has(key))groups.set(key,{style,indices:[]});groups.get(key).indices.push(index);
@@ -213,8 +237,7 @@ class StructureViews {
       for(const i of selected)if(visibleSet.has(i)) {
         const atom=frame.atoms[i],rule=rules[i];
         const radius=rule.style==='stick'?.19:StructureAppearance.radius(atom.elem)*options.scale*(rule.style==='ballstick'?.45:1);
-        if(rule.style==='stick')viewer.addSphere({center:atom,radius,color:0x2455d9});
-        viewer.addCustom(StructureSelection.surfaceMarker(atom,radius));
+        pane.markers.push({atom,radius});
       }
       if(selected.length>=2&&selected.length<=4)for(let j=1;j<selected.length;j++) {
         if(visibleSet.has(selected[j-1])&&visibleSet.has(selected[j]))viewer.addLine({start:frame.atoms[selected[j-1]],end:frame.atoms[selected[j]],color:'#075dce',linewidth:2});

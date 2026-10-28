@@ -6,10 +6,11 @@ import struct
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "plugin"))
 from trajectory import read_frames
-from snapshot import save_snapshot
+from snapshot import save_snapshot, snapshot_context
 
 
 def fixture(path: Path) -> None:
@@ -57,13 +58,35 @@ class FeatureTests(unittest.TestCase):
             first = save_snapshot(params)
             second = save_snapshot(params)
             self.assertNotEqual(first["path"], second["path"])
-            self.assertEqual(Path(first["path"]).parent.name, "structure-snapshots")
+            self.assertEqual(Path(first["path"]).parent, Path(temporary).resolve())
             params["arguments"]["name"] = "../escape.png"
             with self.assertRaises(ValueError):
                 save_snapshot(params)
             params["arguments"]["name"] = "mismatch.pdf"
             with self.assertRaises(ValueError):
                 save_snapshot(params)
+
+    def test_native_picker_and_server_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            chosen = directory / "chosen"
+            chosen.mkdir()
+            params = {"_meta": {"openai/resource": {"path": str(directory / "POSCAR")}},
+                      "arguments": {"name": "frame.png", "data": base64.b64encode(b"\x89PNG\r\n\x1a\nfixture").decode(), "destination": "native"}}
+            with patch("snapshot.platform.system", return_value="Darwin"), patch("snapshot.choose_mac_directory", return_value=None):
+                self.assertEqual(save_snapshot(params), {"cancelled": True})
+                self.assertEqual(list(chosen.iterdir()), [])
+            with patch("snapshot.platform.system", return_value="Darwin"), patch("snapshot.choose_mac_directory", return_value=chosen):
+                self.assertEqual(Path(save_snapshot(params)["path"]).parent, chosen)
+            with patch("snapshot.platform.system", return_value="Linux"):
+                self.assertFalse(snapshot_context(params)["nativePicker"])
+                with self.assertRaises(ValueError):
+                    save_snapshot(params)
+                params["arguments"].update(destination="server", directory=str(chosen))
+                self.assertEqual(Path(save_snapshot(params)["path"]).parent, chosen)
+                params["arguments"]["directory"] = "relative"
+                with self.assertRaises(ValueError):
+                    save_snapshot(params)
 
 
 if __name__ == "__main__":

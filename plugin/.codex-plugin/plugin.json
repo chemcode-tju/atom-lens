@@ -1,7 +1,7 @@
 {
   "name": "structure-viewer",
-  "version": "0.6.0",
-  "description": "Read-only structure viewer with unchanged VASP filenames via a thread entrypoint and server-side path opening, depth-tested selection markers and geometry measurements.",
+  "version": "0.7.0",
+  "description": "Read-only structure viewer with unchanged VASP filenames via a thread entrypoint and server-side path opening, camera-facing selection outlines and configurable local/server snapshot destinations.",
   "author": {
     "name": "liyang-tju"
   },

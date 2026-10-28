@@ -48,29 +48,23 @@
     const minX=Math.min(start.x,end.x),maxX=Math.max(start.x,end.x),minY=Math.min(start.y,end.y),maxY=Math.max(start.y,end.y);
     return points.filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)&&p.x>=minX&&p.x<=maxX&&p.y>=minY&&p.y<=maxY).map(p=>p.index);
   }
-  function surfaceMarker(center,radius,segments=64) {
-    // Three narrow great-circle bands follow the atom's surface in world space.
-    // Ordinary opaque mesh depth testing lets foreground atoms occlude them.
-    const vertexArr=[],normalArr=[],faceArr=[],r=radius*1.012,halfWidth=.045;
-    const addFace=(a,b,c)=>{
-      const u=sub(vertexArr[b],vertexArr[a]),v=sub(vertexArr[c],vertexArr[a]);
-      const normal=normalArr[a];
-      if(dot(cross(u,v),[normal.x,normal.y,normal.z])<0)faceArr.push(a,c,b);else faceArr.push(a,b,c);
-    };
-    for(let axis=0;axis<3;axis++) {
-      const start=vertexArr.length;
-      for(let step=0;step<=segments;step++)for(const side of [-1,1]) {
-        const theta=step*2*Math.PI/segments,n=[0,0,0];
-        n[axis]=Math.sin(side*halfWidth);
-        n[(axis+1)%3]=Math.cos(theta)*Math.cos(halfWidth);
-        n[(axis+2)%3]=Math.sin(theta)*Math.cos(halfWidth);
-        normalArr.push({x:n[0],y:n[1],z:n[2]});
-        vertexArr.push({x:center.x+r*n[0],y:center.y+r*n[1],z:center.z+r*n[2]});
-      }
-      for(let step=0;step<segments;step++) {const i=start+step*2;addFace(i,i+1,i+2);addFace(i+1,i+3,i+2);}
+  function outlineRing(center,radius,normal,width,cameraDistance=Infinity,segments=96) {
+    // Camera-facing silhouette ring, not a sphere shell. Its plane remains at
+    // the tangent circle, so the normal WebGL depth buffer handles occlusion.
+    const n=normal.map(v=>v/Math.hypot(...normal));
+    const u=cross(Math.abs(n[2])<.9?[0,0,1]:[0,1,0],n);
+    const length=Math.hypot(...u);for(let i=0;i<3;i++)u[i]/=length;
+    const v=cross(n,u),offset=Number.isFinite(cameraDistance)?radius*radius/Math.max(radius*1.01,cameraDistance):0;
+    const silhouette=Math.sqrt(Math.max(0,radius*radius-offset*offset));
+    const vertexArr=[],normalArr=[],faceArr=[];
+    for(let step=0;step<=segments;step++)for(const r of [silhouette*.998,silhouette+width]) {
+      const theta=step*2*Math.PI/segments;
+      const point=n.map((value,i)=>[center.x,center.y,center.z][i]+value*offset+r*(u[i]*Math.cos(theta)+v[i]*Math.sin(theta)));
+      vertexArr.push({x:point[0],y:point[1],z:point[2]});normalArr.push({x:n[0],y:n[1],z:n[2]});
     }
-    return {vertexArr,normalArr,faceArr,color:0xffce25,opacity:1};
+    for(let step=0;step<segments;step++){const i=step*2;faceArr.push(i,i+1,i+2,i+1,i+3,i+2);}
+    return {vertexArr,normalArr,faceArr,color:0x004500,opacity:1};
   }
-  const api={measure,remap,DisplayState,inRectangle,surfaceMarker};
+  const api={measure,remap,DisplayState,inRectangle,outlineRing};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.StructureSelection=api;
 })(typeof window!=='undefined'?window:globalThis);

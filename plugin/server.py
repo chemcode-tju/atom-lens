@@ -1,7 +1,7 @@
 """Dependency-free MCP server for the native Codex file-editor entrypoint."""
 
 # Configuration
-plugin_version = "0.6.0"
+plugin_version = "0.7.0"
 resource_uri = "ui://structure-viewer/editor.html"
 
 from pathlib import Path
@@ -11,7 +11,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from trajectory import read_frames
-from snapshot import save_snapshot
+from snapshot import save_snapshot, snapshot_context
 from path_access import StructurePaths
 
 selected_paths = StructurePaths()
@@ -98,10 +98,16 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
             "annotations": {"readOnlyHint": True, "openWorldHint": False},
             "_meta": {"ui": {"visibility": ["app"]}},
         }, {
+            "name": "snapshot_context", "title": "Snapshot destinations",
+            "description": "Identify the plugin host and the opened structure directory for snapshot saving.",
+            "inputSchema": {"type": "object", "additionalProperties": False, "properties": {"token": {"type": "string"}}},
+            "annotations": {"readOnlyHint": True, "openWorldHint": False},
+            "_meta": {"ui": {"visibility": ["app"]}},
+        }, {
             "name": "save_structure_snapshot", "title": "Save structure snapshot",
-            "description": "Save a user-requested PNG/JPEG/PDF in structure-snapshots beside the opened file; never overwrite existing files.",
+            "description": "Save a user-requested PNG/JPEG/PDF in a chosen directory; use the native macOS folder chooser locally. Never overwrite existing files.",
             "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
-                "token": {"type": "string"}, "name": {"type": "string"}, "data": {"type": "string"}}, "required": ["name", "data"]},
+                "token": {"type": "string"}, "destination": {"type": "string", "enum": ["native", "server"]}, "directory": {"type": "string"}, "name": {"type": "string"}, "data": {"type": "string"}}, "required": ["name", "data"]},
             "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False},
             "_meta": {"ui": {"visibility": ["app"]}},
         }]}
@@ -132,9 +138,12 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
         batch = read_frames(selected_paths.bind(params))
         return {"content": [{"type": "text", "text": f"Read {batch.get('frameCount', 0)} frames"}],
                 "structuredContent": batch}
+    if method == "tools/call" and params.get("name") == "snapshot_context":
+        result = snapshot_context(selected_paths.bind(params))
+        return {"content": [], "structuredContent": result}
     if method == "tools/call" and params.get("name") == "save_structure_snapshot":
         result = save_snapshot(selected_paths.bind(params))
-        return {"content": [{"type": "text", "text": f"Saved {result['path']}"}], "structuredContent": result}
+        return {"content": [{"type": "text", "text": "Cancelled" if result.get("cancelled") else f"Saved {result['path']}"}], "structuredContent": result}
     raise ValueError(f"Unsupported method or resource: {method}")
 
 
