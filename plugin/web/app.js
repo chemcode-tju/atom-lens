@@ -1,10 +1,10 @@
 "use strict";
 const $ = id => document.getElementById(id);
 const pending = new Map();
-let nextId = 1, fileRef, resourceMeta = {}, doc, frameIndex = 0, frameData, views;
-let dirty = false, sourceDirty = false, selection = [], timer = null, loading = false, readGeneration = 0;
-let saveInProgress = false, editRevision = 0;
-let previewOnly = false, streamComplete = true, binaryTrajectory = false, pickedFile = false;
+let nextId = 1, fileRef, doc, frameIndex = 0, frameData, views;
+let selection = [], timer = null, loading = false, readGeneration = 0;
+let displayState = new StructureSelection.DisplayState();
+let streamComplete = true, binaryTrajectory = false, pickedFile = false;
 let anchor = null, paintTicket = 0, snapshotTicket = 0, snapshotData = null;
 let playback = {fps:60, speed:1, step:1, loop:true};
 function afterPaint(callback) { requestAnimationFrame(() => setTimeout(callback, 0)); }
@@ -27,18 +27,7 @@ function request(method, params) {
   });
 }
 function status(text, error = false) { $("status").textContent = error ? text : ""; $("status").hidden = !error; }
-function changed(value = true) {
-  dirty = value;
-  $("save").textContent = dirty || sourceDirty ? "保存 *" : "保存";
-  $("save").disabled = !(dirty || sourceDirty) || !resourceMeta.writable || saveInProgress;
-}
 function stop() { cancelAnimationFrame(timer); timer = null; $("play").textContent = "▶"; $("play").setAttribute("aria-label", "播放轨迹"); }
-function editingMode(preview) {
-  previewOnly = preview;
-  $("enable-edit").hidden = !preview;
-  $("source").readOnly = preview;
-  $("apply-source").disabled = preview;
-}
 function updateTimeline() {
   if (!doc) return;
   $("timeline").max = doc.count - 1; $("timeline").value = frameIndex; $("timeline").disabled = doc.count < 2;
@@ -61,57 +50,77 @@ function render(reset = false) {
   if (!doc) return;
   try {
     frameData = doc.frame(frameIndex);
-    if (!views) views = new StructureViews($("viewports"), chooseAtom);
+    if (!views) views = new StructureViews($("viewports"), chooseAtom, chooseBox);
     selection = selection.filter(i => i < frameData.atoms.length);
     const displayed = $("wrap").checked ? StructureGeometry.wrap(frameData) : frameData;
     const follow = $("follow").checked ? StructureGeometry.followAtom(displayed, anchor) : null;
     views.render(displayed, {style: $("style").value, palette: $("palette").value,
-      scale: Number($("radius-scale").value), cell: $("cell").checked, labels: $("labels").checked, hbonds: $("hbonds").checked, lighting: true, follow}, selection, reset);
+      scale: Number($("radius-scale").value), cell: $("cell").checked, labels: $("labels").checked, hbonds: $("hbonds").checked, lighting: true, follow, display: displayState}, selection, reset);
     updateTimeline();
-    if (!sourceDirty && !$("source-panel").hidden) $("source").value = doc.frameText(frameIndex);
+    if (!$("source-panel").hidden) $("source").value = doc.frameText(frameIndex);
     $("source-title").textContent = doc.xyz ? `第 ${frameIndex + 1} 帧源码` : "VASP 文件源码";
     updateSelection();
   } catch (error) { stop(); status(error.message, true); }
 }
 function updateSelection() {
   $("atom-panel").hidden = selection.length === 0;
-  if (!selection.length) return;
-  const index = selection[selection.length - 1], atom = frameData.atoms[index];
-  $("atom-title").textContent = `${atom.elem} · 原子 ${index + 1}`;
-  ["x", "y", "z"].forEach(key => { $("coord-" + key).value = atom[key].toFixed(6); $("coord-" + key).disabled = !doc.xyz || previewOnly; });
-  $("apply-atom").disabled = !doc.xyz || previewOnly;
-  $("distance").textContent = selection.length === 2 ? `直接距离 ${Math.hypot(...["x", "y", "z"].map(k => frameData.atoms[selection[0]][k] - atom[k])).toFixed(4)} Å` : "";
+  $("atom-title").textContent = `已选 ${selection.length} 个原子`;
+  if(!frameData)return;
+  const displayed = $("wrap").checked ? StructureGeometry.wrap(frameData) : frameData;
+  $("measurement").textContent = StructureSelection.measure(displayed.atoms, selection);
+  $("atom-list").replaceChildren(...selection.map((index, order) => {
+    const atom=displayed.atoms[index], row=document.createElement('div');
+    row.textContent=`${order+1}. ${atom.elem} #${index+1}   (${atom.x.toFixed(4)}, ${atom.y.toFixed(4)}, ${atom.z.toFixed(4)}) Å`;
+    return row;
+  }));
+  $("selection-count").textContent=`选中原子 · ${selection.length}`;
+  $("apply-display").disabled=$("reset-selected-style").disabled=!selection.length;
 }
 function chooseAtom(index) {
-  stop(); selection = selection.includes(index) ? selection.filter(i => i !== index) : [...selection.slice(-1), index]; render();
+  if(views?.mode!=="select")return;
+  stop(); selection=selection.includes(index)?selection.filter(i=>i!==index):[...selection,index];render();
 }
-function applySource() {
-  if (previewOnly) return !sourceDirty;
-  if (!sourceDirty) return true;
-  try {
-    const replacement = doc.replaceFrame(frameIndex, $("source").value);
-    replacement.frame(Math.min(frameIndex, replacement.count - 1));
-    doc = replacement; frameIndex = Math.min(frameIndex, doc.count - 1);
-    sourceDirty = false; editRevision++; changed(); render();
-    status("源码已应用到预览；点击保存写回文件。已有计算属性未重算。");
-    return true;
-  } catch (error) { status(`源码未应用：${error.message}`, true); return false; }
+function chooseBox(indices, append) {
+  stop();selection=append?[...new Set([...selection,...indices])]:indices;render();
 }
+function resetDisplayState() { displayState=new StructureSelection.DisplayState();selection=[]; }
+function populateElements() {
+  if(!frameData)return;
+  $("element-list").replaceChildren(...[...new Set(frameData.atoms.map(a=>a.elem))].sort().map(elem=>{
+    const label=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.checked=!displayState.hiddenElements.has(elem);
+    input.onchange=()=>{if(input.checked)displayState.hiddenElements.delete(elem);else displayState.hiddenElements.add(elem);scheduleRender();};
+    label.append(input,document.createTextNode(elem));return label;
+  }));
+  updateSelection();
+}
+$("clear-selection").onclick=()=>{selection=[];render();};
+$("display-settings").onclick=()=>{stop();populateElements();$("display-dialog").showModal();};
+$("display-close").onclick=()=>$("display-dialog").close();
+$("show-elements").onclick=()=>{displayState.hiddenElements.clear();populateElements();scheduleRender();};
+$("apply-display").onclick=()=>{
+  const style=$("selection-style").value,palette=$("selection-palette").value,visible=$("selection-visible").value;
+  displayState.apply(frameData,selection,{...(style?{style}:{}),...(palette?{palette,color:palette==='custom'?$("selection-color").value:null}:{}),...(visible?{visible:visible==='show'}:{})});scheduleRender();
+};
+$("reset-selected-style").onclick=()=>{displayState.reset(frameData,selection);scheduleRender();};
+$("reset-display").onclick=()=>{resetDisplayState();populateElements();scheduleRender();};
 function go(index) {
-  if (!doc || !applySource()) return;
+  if (!doc) return;
   const target = Math.max(0, Math.min(doc.count - 1, Number(index) || 0));
   try { if($("follow").checked)StructureGeometry.followAtom(doc.frame(target),anchor); }
   catch(error){stop();status(error.message,true);return;}
-  frameIndex=target;selection=[];status("");render();
+  const previousFrame=doc.frame(frameIndex),nextFrame=doc.frame(target);
+  selection=StructureSelection.remap(previousFrame,nextFrame,selection);
+  displayState.transition(previousFrame,nextFrame);
+  frameIndex=target;status("");render();
 }
 async function loadFile(file, reload = false) {
   if (!file?.resourceUri || (!reload && fileRef?.resourceUri === file.resourceUri && (doc || loading))) return;
-  pickedFile=false; binaryTrajectory=/\.traj$/i.test(file.name); clearFollow();
+  pickedFile=false; binaryTrajectory=/\.traj$/i.test(file.name); clearFollow(); resetDisplayState();
   if (!/\.(extxyz|xyz|traj)$/i.test(file.name)) { frameIndex=0; return loadFullFile(file); }
   const generation = ++readGeneration;
   stop(); loading = true; streamComplete = false;
-  fileRef = file; doc = null; resourceMeta = {}; frameIndex = 0; selection = []; sourceDirty = false;
-  editingMode(true); $("enable-edit").hidden = binaryTrajectory; $("source-toggle").hidden = binaryTrajectory; $("source-panel").hidden = true; changed(false);
+  fileRef = file; doc = null; frameIndex = 0; selection = [];
+  $("source-toggle").hidden = binaryTrajectory; $("source-panel").hidden = true;
   $("filename").textContent = file.name; status("正在读取第一帧…");
   let offset = 0, version;
   try {
@@ -131,8 +140,7 @@ async function loadFile(file, reload = false) {
       streamComplete = batch.eof; offset = batch.nextOffset; version = batch.version;
       if (first) { doc.frame(0); render(true); request("resources/subscribe", { uri: file.resourceUri }).catch(() => {}); }
       else updateTimeline();
-      const percent = batch.totalBytes ? Math.floor(offset / batch.totalBytes * 100) : 100;
-      status(streamComplete ? `${doc.count} 帧已加载 · 点击“启用编辑”可修改文件` : `已加载 ${doc.count} 帧 · ${percent}% · 可拖动已加载部分`);
+      status("");
       if (streamComplete) break;
       // Yield to input and paint before requesting the next bounded batch.
       await new Promise(resolve => setTimeout(resolve, 40));
@@ -146,8 +154,7 @@ async function loadFullFile(file) {
   if (/\.traj$/i.test(file.name)) { status("当前宿主不支持轨迹分段读取，请使用“打开”选择本地 .traj 文件", true); return; }
   loading = true; const generation = ++readGeneration; stop();
   $("source-toggle").hidden=false;
-  fileRef = file; $("filename").textContent = file.name; status("正在读取完整文件与保存版本，请稍候…");
-  $("enable-edit").disabled = true;
+  fileRef = file; $("filename").textContent = file.name; status("");
   try {
     const result = await request("resources/read", { uri: file.resourceUri, _meta: { "openai/resource": { representation: "text" } } });
     if (generation !== readGeneration) return;
@@ -157,25 +164,12 @@ async function loadFullFile(file) {
     if (text === undefined && content.blob) text = new TextDecoder().decode(Uint8Array.from(atob(content.blob), c => c.charCodeAt(0)));
     if (typeof text !== "string") throw Error("文件超过宿主读取限制或不是文本文件");
     const parsed = new StructureParser.StructureDocument(file.name, text); parsed.frame(0);
-    doc = parsed; resourceMeta = content._meta?.["openai/resource"] || {};
-    streamComplete = true; editingMode(false);
-    frameIndex = Math.min(frameIndex, doc.count - 1); selection = []; sourceDirty = false; changed(false); render(true);
-    status(`${doc.count} 帧已加载 · ${resourceMeta.writable ? "可以编辑保存" : "宿主只读"} · ${$("style").value === "sphere" ? "原子球显示" : "连线按距离推断"}`);
+    doc = parsed;
+    streamComplete = true;
+    frameIndex = Math.min(frameIndex, doc.count - 1); selection = []; render(true);
     request("resources/subscribe", { uri: file.resourceUri }).catch(() => {});
   } catch (error) { if (generation === readGeneration) status(`完整读取失败：${error.message}`, true); }
-  finally { if (generation === readGeneration) { loading = false; $("enable-edit").disabled = false; } }
-}
-async function save() {
-  if (!doc || !resourceMeta.writable || saveInProgress || !applySource()) return;
-  saveInProgress = true; const revision = editRevision; changed(dirty); status("正在保存…");
-  try {
-    const result = await request("openai/resources/write", { uri: fileRef.resourceUri, text: doc.serialize(), ...(resourceMeta.etag ? { ifMatch: resourceMeta.etag } : {}) });
-    if (result.outcome === "conflict") throw Error("文件已被其他程序修改，本次未覆盖；请复制当前源码后重新打开文件。");
-    if (result.outcome === "too-large") throw Error(`文件超过宿主保存上限 ${(result.maxBytes / 1048576).toFixed(1)} MiB`);
-    if (result.outcome !== "saved") throw Error("宿主未确认保存成功");
-    resourceMeta.etag = result.etag; if (revision === editRevision) changed(false); status("已保存到原文件。");
-  } catch (error) { status(`保存失败：${error.message}`, true); }
-  finally { saveInProgress = false; changed(dirty); }
+  finally { if (generation === readGeneration) { loading = false; } }
 }
 window.addEventListener("message", event => {
   if (event.source !== window.parent || event.data?.jsonrpc !== "2.0") return;
@@ -187,8 +181,7 @@ window.addEventListener("message", event => {
   if (message.method === "ui/notifications/tool-input") loadFile(message.params?.arguments?.file);
   if (message.method === "ui/notifications/tool-result") loadFile(message.params?.structuredContent?.file);
   if (message.method === "notifications/resources/updated" && message.params?.uri === fileRef?.resourceUri) {
-    if (dirty || sourceDirty || saveInProgress) status("检测到文件更新；保留当前编辑，保存时会检查版本。");
-    else loadFile(fileRef, true);
+    loadFile(fileRef, true);
   }
   if (message.method === "ui/resource-teardown" && message.id !== undefined) {
     stop(); window.parent.postMessage({ jsonrpc: "2.0", id: message.id, result: {} }, "*");
@@ -200,7 +193,7 @@ $("previous").onclick = () => { stop(); go(frameIndex - 1); };
 $("next").onclick = () => { stop(); go(frameIndex + 1); };
 $("play").onclick = () => {
   if (timer) return stop();
-  if (!doc || doc.count < 2 || !applySource()) return;
+  if (!doc || doc.count < 2) return;
   if(frameIndex===doc.count-1 && streamComplete)go(0);
   $("play").textContent = "Ⅱ"; $("play").setAttribute("aria-label", "暂停轨迹");
   let previous=performance.now(), accumulator=0;
@@ -234,35 +227,23 @@ $("reset").onclick = () => views?.fit();
 document.querySelectorAll("[data-orientation]").forEach(button=>button.onclick=()=>{views?.setOrientation(button.dataset.orientation);$("orientation").open=false;});
 $("layout").onchange = event => views?.setLayout(event.target.value);
 $("expand").onclick = () => views?.toggleExpand();
-for (const mode of ["rotate", "pan", "zoom"]) $(mode).onclick = () => views?.setMode(mode);
+for (const mode of ["rotate", "pan", "zoom", "select", "box"]) $(mode).onclick = () => views?.setMode(mode);
 $("first").onclick = () => { stop(); go(0); };
 $("last").onclick = () => { stop(); if (doc) go(doc.count - 1); };
 for (const id of ["style", "palette", "radius-scale", "cell", "labels", "hbonds", "wrap"]) $(id).onchange = () => { stop(); status(""); scheduleRender(id==="wrap"); };
 $("follow").onchange=()=>{stop();if($("follow").checked)setFollow(Number($("follow-number").value)-1);else {anchor=null;render();}};
 $("follow-apply").onclick=()=>{stop();setFollow(Number($("follow-number").value)-1);};
 $("follow-selected").onclick=()=>setFollow(selection[selection.length-1]);
-$("source-toggle").onclick = () => { stop(); $("source-panel").hidden = !$("source-panel").hidden; if(doc&&!sourceDirty)$("source").value=doc.frameText(frameIndex); };
-$("source").oninput = () => { sourceDirty = true; editRevision++; changed(dirty); };
-$("apply-source").onclick = applySource;
-$("apply-atom").onclick = () => {
-  if (!doc || previewOnly || !selection.length || !applySource()) return;
-  try { doc.updateAtom(frameIndex, selection[selection.length - 1], ["x", "y", "z"].map(key => $("coord-" + key).value)); editRevision++; changed(); render(); status("坐标已修改；已有能量和力未重算。点击保存写回文件。"); }
-  catch (error) { status(error.message, true); }
-};
-$("save").onclick = save;
-$("enable-edit").onclick = () => loadFullFile(fileRef);
-document.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); save(); } });
-window.addEventListener("beforeunload", e => { if (dirty || sourceDirty) { e.preventDefault(); e.returnValue = ""; } });
-request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.4.0" }, appCapabilities: {} })
+$("source-toggle").onclick = () => { stop(); $("source-panel").hidden = !$("source-panel").hidden; if(doc)$("source").value=doc.frameText(frameIndex); };
+request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.5.0" }, appCapabilities: {} })
   .then(() => { send("ui/notifications/initialized", {}); status("已连接，等待文件…"); })
   .catch(error => status(`连接失败：${error.message}`, true));
 
 $("open-file").onclick=()=>$("file-picker").click();
 $("file-picker").onchange=async()=>{
   const file=$("file-picker").files[0];if(!file)return;
-  if((dirty||sourceDirty)&&!confirm("放弃尚未保存的修改并打开文件？"))return;
-  const generation=++readGeneration;stop();clearFollow();pickedFile=true;fileRef=null;resourceMeta={};frameIndex=0;selection=[];sourceDirty=false;doc=null;
-  binaryTrajectory=/\.traj$/i.test(file.name);editingMode(true);$("enable-edit").hidden=true;$("source-toggle").hidden=binaryTrajectory;$("source-panel").hidden=true;changed(false);status("");$("filename").textContent=file.name;
+  const generation=++readGeneration;stop();clearFollow();resetDisplayState();pickedFile=true;fileRef=null;frameIndex=0;selection=[];doc=null;
+  binaryTrajectory=/\.traj$/i.test(file.name);$("source-toggle").hidden=binaryTrajectory;$("source-panel").hidden=true;status("");$("filename").textContent=file.name;
   try {
     if(binaryTrajectory){
       loading=true;streamComplete=false;const trajectory=await ASETrajectory.open(file);

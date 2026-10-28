@@ -22,6 +22,10 @@ class ServerTests(unittest.TestCase):
         resource = server.dispatch("resources/read", {"uri": server.resource_uri})["contents"][0]
         self.assertNotIn("/*__", resource["text"])
         self.assertIn('id="timeline"', resource["text"])
+        for obsolete in ['id="enable-edit"', 'id="apply-atom"', 'id="apply-source"', 'openai/resources/write']:
+            self.assertNotIn(obsolete, resource["text"])
+        self.assertIn('id="source" readonly', resource["text"])
+        self.assertIn('id="display-dialog"', resource["text"])
         self.assertEqual(resource["mimeType"], "text/html;profile=mcp-app")
 
     def test_stdio(self) -> None:

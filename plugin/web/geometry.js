@@ -47,7 +47,7 @@
         const ha=minimumImage(sub(point(a),point(h)),frame.cell,frame.pbc,2.5);
         if(!ha||Math.hypot(...ha)<.3||Math.hypot(...sub(ha,donorVector))>maxDA)continue;
         const angle=Math.acos(Math.max(-1,Math.min(1,dot(donorVector,ha)/(nearest*Math.hypot(...ha)))))*180/Math.PI;
-        if(angle>=minAngle)bonds.push({hydrogen:hi,acceptor:i,start:point(h),end:point(h).map((x,j)=>x+ha[j])});
+        if(angle>=minAngle)bonds.push({donor:donor.i,hydrogen:hi,acceptor:i,start:point(h),end:point(h).map((x,j)=>x+ha[j])});
       }
     }
     return bonds;

@@ -1,7 +1,7 @@
 {
   "name": "structure-viewer",
-  "version": "0.4.0",
-  "description": "Native atomic structure and trajectory viewer with periodic geometry, atom following, editing, and PNG/JPEG/PDF snapshots.",
+  "version": "0.5.0",
+  "description": "Read-only atomic structure and trajectory viewer with element visibility, group styles, ordered measurements and snapshots.",
   "author": {
     "name": "liyang-tju"
   },
@@ -9,8 +9,8 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Structure Viewer",
-    "shortDescription": "原子结构与轨迹查看、编辑",
-    "longDescription": "Open XYZ, extxyz, ASE traj and VASP structures in the Codex side panel. Includes multiview navigation, hydrogen bonds, display wrapping, atom following and snapshots. Bare POSCAR/CONTCAR/XDATCAR files can be selected with the local Open button.",
+    "shortDescription": "原子结构与轨迹查看、选择与测量",
+    "longDescription": "View XYZ, extxyz, ASE traj and VASP structures. Includes element visibility, box selection, per-selection styles, distances, angles, dihedrals, atom following and snapshots. Bare VASP names can be opened with the local Open button; native file links require suffixes.",
     "category": "Education & Research",
     "capabilities": [
       "Interactive",

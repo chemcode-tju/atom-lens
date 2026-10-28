@@ -1,7 +1,7 @@
 """Dependency-free MCP server for the native Codex file-editor entrypoint."""
 
 # Configuration
-plugin_version = "0.4.0"
+plugin_version = "0.5.0"
 resource_uri = "ui://structure-viewer/editor.html"
 
 from pathlib import Path
@@ -27,6 +27,7 @@ def widget_html() -> str:
         ("/*__GEOMETRY__*/", "geometry.js"),
         ("/*__ASE_TRAJ__*/", "ase-traj.js"),
         ("/*__SNAPSHOT__*/", "snapshot.js"),
+        ("/*__SELECTION__*/", "selection.js"),
         ("/*__VIEWPORT__*/", "viewport.js"),
         ("/*__APP__*/", "app.js"),
     ]:
@@ -44,7 +45,7 @@ def widget_html() -> str:
 def tool_descriptor() -> dict[str, Any]:
     return {
         "name": "open_structure", "title": "Structure Viewer",
-        "description": "Native file viewer/editor for atomic structures and trajectories.",
+        "description": "Native read-only file viewer for atomic structures and trajectories.",
         "inputSchema": {
             "type": "object", "properties": {"file": {
                 "type": "object", "properties": {
@@ -86,7 +87,7 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
             "_meta": {"ui": {"visibility": ["app"]}},
         }]}
     if method == "resources/list":
-        return {"resources": [{"uri": resource_uri, "name": "Atomic structure editor",
+        return {"resources": [{"uri": resource_uri, "name": "Atomic structure viewer",
                                "mimeType": "text/html;profile=mcp-app"}]}
     if method == "resources/templates/list":
         return {"resourceTemplates": []}

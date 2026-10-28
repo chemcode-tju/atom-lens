@@ -7,9 +7,9 @@ function projectToView([a,b,c], [x,y,z,w]) {
     2*(x*z-y*w)*a + 2*(y*z+x*w)*b + (1-2*(x*x+y*y))*c];
 }
 class StructureViews {
-  constructor(container, onAtom) {
+  constructor(container, onAtom, onBox) {
     this.container = container;
-    this.onAtom = onAtom;
+    this.onAtom = onAtom; this.onBox = onBox;
     this.panes = [];
     this.active = 1;
     this.layout = "single";
@@ -21,7 +21,7 @@ class StructureViews {
   createPane(preset, index) {
     const element = document.createElement("section");
     element.className = "viewport";
-    element.innerHTML = '<button class="view-title" type="button"></button><div class="view-canvas"></div><div class="pointer-layer"></div><svg class="axis-gizmo" viewBox="0 0 78 78" aria-label="坐标轴"></svg>';
+    element.innerHTML = '<button class="view-title" type="button"></button><div class="view-canvas"></div><div class="pointer-layer"><div class="selection-rectangle" hidden></div></div><svg class="axis-gizmo" viewBox="0 0 78 78" aria-label="坐标轴"></svg>';
     this.container.append(element);
     const canvas = element.querySelector(".view-canvas");
     const viewer = $3Dmol.createViewer(canvas, {canvas: document.createElement("canvas"), row:0, col:0, rows:1, cols:1, backgroundColor: "#ffffff", antialias: true, orthographic: true, disableFog: true});
@@ -38,17 +38,29 @@ class StructureViews {
     let pointer = null;
     layer.onpointerdown = event => {
       if (event.button !== 0) return;
-      pointer = {id: event.pointerId, x: event.clientX, y: event.clientY};
+      pointer = {id: event.pointerId, x: event.clientX, y: event.clientY, startX:event.clientX, startY:event.clientY};
+      if(this.mode==='box') {const box=layer.querySelector('.selection-rectangle');box.hidden=false;box.style.cssText='left:0;top:0;width:0;height:0';}
       layer.setPointerCapture(event.pointerId); event.preventDefault();
     };
     layer.onpointermove = event => {
       if (!pointer || pointer.id !== event.pointerId) return;
       const dx = event.clientX - pointer.x, dy = event.clientY - pointer.y;
-      if (this.mode === "pan") viewer.translateScene(dx, dy);
+      if(this.mode==='box') {
+        const rect=layer.getBoundingClientRect(),box=layer.querySelector('.selection-rectangle');
+        box.style.cssText=`left:${Math.min(pointer.startX,event.clientX)-rect.left}px;top:${Math.min(pointer.startY,event.clientY)-rect.top}px;width:${Math.abs(event.clientX-pointer.startX)}px;height:${Math.abs(event.clientY-pointer.startY)}px`;
+      } else if (this.mode === "pan") viewer.translateScene(dx, dy);
       else viewer.zoom(Math.exp(-dy * 0.012));
       pointer.x = event.clientX; pointer.y = event.clientY;
     };
-    layer.onpointerup = layer.onpointercancel = () => { pointer = null; };
+    layer.onpointerup = event => {
+      if(pointer&&this.mode==='box') {
+        const atoms=this.latest?.[0].atoms||[];
+        const points=this.visibleIndices.map(index=>({...viewer.modelToScreen(atoms[index]),index}));
+        this.onBox(StructureSelection.inRectangle(points,{x:pointer.startX+scrollX,y:pointer.startY+scrollY},{x:event.clientX+scrollX,y:event.clientY+scrollY}),event.shiftKey);
+      }
+      layer.querySelector('.selection-rectangle').hidden=true;pointer=null;
+    };
+    layer.onpointercancel=()=>{layer.querySelector('.selection-rectangle').hidden=true;pointer=null;};
     layer.addEventListener("wheel", event => { event.preventDefault(); viewer.zoom(Math.exp(-event.deltaY * 0.001)); }, {passive: false});
   }
   title(preset) { return {xy: "Top · XY", xz: "Front · XZ", yz: "Left · YZ", perspective: "Perspective"}[preset]; }
@@ -140,7 +152,7 @@ class StructureViews {
     const {pane,exporter}=this.exportView;
     pane.canvas.style.width=width+'px';pane.canvas.style.height=height+'px';pane.element.style.width=width+'px';pane.element.style.height=height+'px';
     pane.viewer.resize();pane.preset=this.panes[this.active].preset;
-    exporter.render(...this.latest,false);
+    exporter.render(this.latest[0],this.latest[1],[],false);
     pane.viewer.setProjection(pane.preset==='perspective'?'perspective':'orthographic');
     pane.viewer.setView(this.panes[this.active].viewer.getView());
     pane.viewer.setBackgroundColor('#ffffff',0);pane.viewer.render();
@@ -149,30 +161,43 @@ class StructureViews {
   render(frame, options, selected, reset) {
     this.latest = [frame, options, selected];
     this.follow = options.follow || null;
-    const hydrogenBonds = options.hbonds ? StructureGeometry.hydrogenBonds(frame) : [];
+    const rules=frame.atoms.map((atom,index)=>options.display?.resolve(atom,index,options)||{...options,visible:true});
+    this.visibleIndices=rules.flatMap((rule,index)=>rule.visible?[index]:[]);
+    const visibleSet=new Set(this.visibleIndices);
+    const hydrogenBonds = options.hbonds ? StructureGeometry.hydrogenBonds(frame).filter(b=>visibleSet.has(b.donor)&&visibleSet.has(b.hydrogen)&&visibleSet.has(b.acceptor)) : [];
 
-    const colors = StructureAppearance.palette(options.palette, $3Dmol.elementColors);
     const vertices = options.cell && frame.cell ? Array.from({length:8}, (_,mask) => Object.fromEntries(["x","y","z"].map((axis,j) => [axis, frame.cell.reduce((sum,v,k) => sum + ((mask>>k)&1)*v[j], 0)]))) : [];
     this.bounds = {min:[Infinity,Infinity,Infinity], max:[-Infinity,-Infinity,-Infinity]};
-    for (const atom of [...frame.atoms, ...vertices]) {
+    for (const atom of [...this.visibleIndices.map(i=>frame.atoms[i]), ...vertices]) {
       const radius = atom.elem ? StructureAppearance.radius(atom.elem)*options.scale : 0;
       ["x","y","z"].forEach((axis,i) => { this.bounds.min[i] = Math.min(this.bounds.min[i], atom[axis]-radius); this.bounds.max[i] = Math.max(this.bounds.max[i], atom[axis]+radius); });
     }
+    if(!Number.isFinite(this.bounds.min[0]))this.bounds={min:[-1,-1,-1],max:[1,1,1]};
     for (const pane of this.panes) {
       if (pane.element.hidden) { pane.stale = true; continue; }
       const viewer = pane.viewer, previous = viewer.getView();
       const initialize = !pane.ready;
       this.setLighting(viewer, options.lighting);
       viewer.removeAllModels(); viewer.removeAllShapes(); viewer.removeAllLabels();
-      const xyz = `${frame.atoms.length}\n\n${frame.atoms.map(a => `${a.elem} ${a.x} ${a.y} ${a.z}`).join("\n")}\n`;
-      const model = viewer.addModel(xyz, "xyz", {assignBonds: options.style !== "sphere"});
-      for (const element of new Set(frame.atoms.map(a => a.elem))) {
-        const color = colors[element] ?? 0xff1493;
-        const radius = StructureAppearance.radius(element) * options.scale;
-        const style = options.style === "sphere" ? {sphere: {radius, color}} : options.style === "stick" ? {stick: {radius: 0.16, color}} : {sphere: {radius: radius * 0.45, color}, stick: {radius: 0.10, color}};
-        viewer.setStyle({elem: element}, style);
+      // Build only visible atoms, so hidden atoms cannot leave bonds or click targets.
+      const visibleAtoms=this.visibleIndices.map(i=>frame.atoms[i]);
+      const xyz = `${visibleAtoms.length}\n\n${visibleAtoms.map(a => `${a.elem} ${a.x} ${a.y} ${a.z}`).join("\n")}\n`;
+      if(visibleAtoms.length) {
+        const model = viewer.addModel(xyz, "xyz", {assignBonds: rules.some(r=>r.visible&&r.style!=="sphere")});
+        model.selectedAtoms({}).forEach((atom,index)=>{atom.index=index;});
+        viewer.setStyle({},{});
+        const groups=new Map();
+        this.visibleIndices.forEach((originalIndex,index)=>{
+          const atom=frame.atoms[originalIndex],rule=rules[originalIndex];
+          const palette=StructureAppearance.palette(rule.palette,$3Dmol.elementColors);
+          const color=rule.palette==='custom'?rule.color:(palette[atom.elem]??0xff1493);
+          const radius=StructureAppearance.radius(atom.elem)*options.scale;
+          const style=rule.style==='sphere'?{sphere:{radius,color}}:rule.style==='stick'?{stick:{radius:.16,color}}:{sphere:{radius:radius*.45,color},stick:{radius:.10,color}};
+          const key=JSON.stringify(style);if(!groups.has(key))groups.set(key,{style,indices:[]});groups.get(key).indices.push(index);
+        });
+        for(const {style,indices} of groups.values())viewer.setStyle({index:indices},style);
+        model.setClickable({},true,atom=>this.onAtom(this.visibleIndices[atom.index]));
       }
-      model.setClickable({}, true, atom => this.onAtom(atom.index));
       if (options.cell && frame.cell) {
         for (let mask=0; mask<8; mask++) for (let k=0; k<3; k++) if (!(mask & (1<<k))) viewer.addLine({start:vertices[mask], end:vertices[mask | (1<<k)], color:"#333333", linewidth:1});
       }
@@ -184,8 +209,11 @@ class StructureViews {
           viewer.addCylinder({start:p(i),end:p(Math.min(i+1,steps)),radius:0.035,color:0x3699ae,fromCap:1,toCap:1});
         }
       }
-      if (options.labels) frame.atoms.forEach((atom, i) => viewer.addLabel(`${atom.elem}${i+1}`, {position:atom, fontSize:11, fontColor:"#222222", showBackground:false}, undefined, true));
-      selected.forEach(i => viewer.addLabel(`${frame.atoms[i].elem} #${i+1}`, {position:frame.atoms[i], fontSize:12, backgroundColor:"#2361a9", backgroundOpacity:0.9}, undefined, true));
+      if (options.labels) this.visibleIndices.forEach(i => {const atom=frame.atoms[i];viewer.addLabel(`${atom.elem}${i+1}`, {position:atom, fontSize:11, fontColor:"#222222", showBackground:false}, undefined, true);});
+      selected.filter(i=>visibleSet.has(i)).forEach(i => viewer.addLabel('×', {position:frame.atoms[i],fontSize:22,fontColor:'#075dce',bold:true,showBackground:false,inFront:true,alignment:'center'}, undefined, true));
+      if(selected.length>=2&&selected.length<=4)for(let j=1;j<selected.length;j++) {
+        if(visibleSet.has(selected[j-1])&&visibleSet.has(selected[j]))viewer.addLine({start:frame.atoms[selected[j-1]],end:frame.atoms[selected[j]],color:'#075dce',linewidth:2});
+      }
       pane.ready = true;
       if (reset || initialize) this.orient(pane, pane.preset);
       else {
