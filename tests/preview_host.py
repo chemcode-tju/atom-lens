@@ -4,6 +4,7 @@
 fixture_file = "test-data/train.extxyz"
 port = 8767
 batch_delay_seconds = 0.2
+host_color_scheme = "light"
 
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -58,7 +59,8 @@ class TestHost(BaseHTTPRequestHandler):
         if self.path == "/":
             self.reply(host_html.replace("__NAME__", Path(fixture_file).name).encode(), "text/html")
         elif self.path == "/widget":
-            self.reply(server.widget_html().encode(), "text/html")
+            html = server.widget_html().replace('<html lang="zh-CN">', f'<html lang="zh-CN" style="color-scheme:{host_color_scheme}">')
+            self.reply(html.encode(), "text/html")
         elif self.path == "/fixture":
             self.reply((root / fixture_file).read_bytes(), "text/plain")
         else:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 # Configuration
-max_source_bytes = 64 * 1024 * 1024
 max_open_files = 256
 
 from pathlib import Path
@@ -53,7 +52,7 @@ class StructurePaths:
         return {**params, "_meta": {"openai/resource": {"path": str(self.files[token])}}}
 
     def read_source(self, params: dict[str, Any]) -> dict[str, str]:
-        """Bound the complete VASP read and reject concurrent modifications."""
+        """Compatibility full read; normal VASP viewing uses progressive frame reads."""
         token = params.get("arguments", {}).get("token")
         if not isinstance(token, str) or token not in self.files:
             raise ValueError("结构文件会话已失效，请重新按路径打开。")
@@ -63,10 +62,8 @@ class StructurePaths:
             info = os.fstat(stream.fileno())
             if not stat.S_ISREG(info.st_mode):
                 raise ValueError("只能读取普通结构文件。")
-            if info.st_size > max_source_bytes:
-                raise ValueError("VASP 文件超过当前 64 MiB 完整读取上限。")
             version = file_version(info)
-            data = stream.read(max_source_bytes + 1)
-            if len(data) > max_source_bytes or version != file_version(os.fstat(stream.fileno())) or version != file_version(path.stat()):
+            data = stream.read()
+            if version != file_version(os.fstat(stream.fileno())) or version != file_version(path.stat()):
                 raise ValueError("读取时文件已变化，请等待写入完成后重新打开。")
         return {"text": data.decode("utf-8"), "version": version}

@@ -164,7 +164,16 @@
     frameText(index) { const ref = this.frames[index]; return ref.chunk.frameText(ref.index); }
     serialize() { return this.parts.join(""); }
   }
-  const api = { StructureDocument, ProgressiveXYZDocument, attributes, columns, elements };
+  class ProgressiveVASPDocument extends ProgressiveXYZDocument {
+    constructor(name) { super('XDATCAR'); this.originalName=name; this.xyz=false; this.vaspPreview=true; }
+    frameText(index) {
+      const {chunk,index:local}=this.frames[index],frame=chunk.frames[local];
+      const header=chunk.lines.slice(0,7);
+      if(/^s/i.test(chunk.lines[7].trim()))header.push(chunk.lines[7]);
+      return [...header,...chunk.lines.slice(frame.start-1,frame.end)].join(chunk.newline)+chunk.newline;
+    }
+  }
+  const api = { StructureDocument, ProgressiveXYZDocument, ProgressiveVASPDocument, attributes, columns, elements };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.StructureParser = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

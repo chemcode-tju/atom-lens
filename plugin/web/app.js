@@ -61,7 +61,7 @@ function render(reset = false) {
       scale: Number($("radius-scale").value), cell: $("cell").checked, labels: $("labels").checked, hbonds: $("hbonds").checked, lighting: true, display: displayState}, selection, reset);
     updateTimeline();
     if (!$("source-panel").hidden) $("source").value = doc.frameText(frameIndex);
-    $("source-title").textContent = doc.xyz ? `第 ${frameIndex + 1} 帧源码` : "VASP 文件源码";
+    $("source-title").textContent = doc.vaspPreview ? `第 ${frameIndex + 1} 帧 VASP 源码` : doc.xyz ? `第 ${frameIndex + 1} 帧源码` : "VASP 文件源码";
     updateSelection();
   } catch (error) { stop(); status(error.message, true); }
 }
@@ -127,7 +127,6 @@ function go(index) {
 async function loadFile(file, reload = false) {
   if (!file?.resourceUri || (!reload && fileRef?.resourceUri === file.resourceUri && (doc || loading))) return;
   pickedFile=false; binaryTrajectory=/\.traj$/i.test(file.name); clearFollow(); resetDisplayState();
-  if (!/\.(extxyz|xyz|traj)$/i.test(file.name)) { frameIndex=0; return loadFullFile(file); }
   const generation = ++readGeneration;
   stop(); loading = true; streamComplete = false;
   fileRef = file; doc = null; frameIndex = 0; selection = [];
@@ -145,7 +144,7 @@ async function loadFile(file, reload = false) {
       if (batch?.supported === false && offset === 0) return loadFullFile(file);
       if (!batch || typeof batch.text !== "string" || !Number.isInteger(batch.nextOffset) || batch.nextOffset < offset || (!batch.eof && batch.nextOffset === offset)) throw Error("分段读取返回无效数据");
       const first = !doc;
-      if (first) doc = new StructureParser.ProgressiveXYZDocument(binaryTrajectory ? "preview.extxyz" : file.name);
+      if (first) doc = batch.format === "vasp" ? new StructureParser.ProgressiveVASPDocument(file.name) : new StructureParser.ProgressiveXYZDocument(binaryTrajectory ? "preview.extxyz" : file.name);
       doc.append(batch.text);
       if (first && !doc.count) throw Error("没有有效结构帧");
       streamComplete = batch.eof; offset = batch.nextOffset; version = batch.version;
@@ -265,7 +264,7 @@ $("drift-apply").onclick=()=>{
   }catch(error){drift=null;$("drift-error").textContent=error.message;}
 };
 $("source-toggle").onclick = () => { stop(); $("source-panel").hidden = !$("source-panel").hidden; if(doc)$("source").value=doc.frameText(frameIndex); };
-request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.8.1" }, appCapabilities: {} })
+request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.8.2" }, appCapabilities: {} })
   .then(() => { send("ui/notifications/initialized", {}); status("已连接，等待文件…"); })
   .catch(error => status(`连接失败：${error.message}`, true));
 
@@ -283,6 +282,15 @@ $("file-picker").onchange=async()=>{
         if(index===0)render(true);else updateTimeline();
         if(index%16===0)await new Promise(resolve=>setTimeout(resolve,0));
       }
+    } else if(/^(POSCAR|CONTCAR|XDATCAR)$/i.test(file.name)||/\.vasp$/i.test(file.name)) {
+      loading=true;streamComplete=false;doc=new StructureParser.ProgressiveVASPDocument(file.name);
+      for await(const block of VASPStream.frames(file)) {
+        if(generation!==readGeneration)return;
+        doc.append(block);
+        if(doc.count===1)render(true);else if(doc.count%16===0)updateTimeline();
+        if(doc.count%16===0||doc.count===1)await new Promise(resolve=>setTimeout(resolve,0));
+      }
+      streamComplete=true;updateTimeline();
     } else {
       const text=await file.text();if(generation!==readGeneration)return;
       doc=new StructureParser.StructureDocument(file.name,text);streamComplete=true;render(true);

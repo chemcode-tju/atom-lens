@@ -1,7 +1,7 @@
 """Dependency-free MCP server for the native Codex file-editor entrypoint."""
 
 # Configuration
-plugin_version = "0.8.1"
+plugin_version = "0.8.2"
 resource_uri = "ui://structure-viewer/editor.html"
 
 from pathlib import Path
@@ -30,6 +30,7 @@ def widget_html() -> str:
         ("/*__APPEARANCE__*/", "appearance.js"),
         ("/*__GEOMETRY__*/", "geometry.js"),
         ("/*__ASE_TRAJ__*/", "ase-traj.js"),
+        ("/*__VASP_STREAM__*/", "vasp-stream.js"),
         ("/*__SNAPSHOT__*/", "snapshot.js"),
         ("/*__SELECTION__*/", "selection.js"),
         ("/*__VIEWPORT__*/", "viewport.js"),
@@ -90,7 +91,7 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
             "_meta": {"ui": {"visibility": ["app"]}},
         }, {
             "name": "read_trajectory_frames", "title": "Read trajectory frames",
-            "description": "Read a bounded batch of complete XYZ or ASE trajectory frames from the host-selected file.",
+            "description": "Read a bounded batch of complete XYZ, ASE or VASP trajectory frames from the host-selected file.",
             "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
                 "token": {"type": "string"},
                 "offset": {"type": "integer", "minimum": 0},
