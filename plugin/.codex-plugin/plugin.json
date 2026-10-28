@@ -1,7 +1,7 @@
 {
   "name": "structure-viewer",
-  "version": "0.5.0",
-  "description": "Read-only atomic structure and trajectory viewer with element visibility, group styles, ordered measurements and snapshots.",
+  "version": "0.6.0",
+  "description": "Read-only structure viewer with unchanged VASP filenames via a thread entrypoint and server-side path opening, depth-tested selection markers and geometry measurements.",
   "author": {
     "name": "liyang-tju"
   },
@@ -10,7 +10,7 @@
   "interface": {
     "displayName": "Structure Viewer",
     "shortDescription": "原子结构与轨迹查看、选择与测量",
-    "longDescription": "View XYZ, extxyz, ASE traj and VASP structures. Includes element visibility, box selection, per-selection styles, distances, angles, dihedrals, atom following and snapshots. Bare VASP names can be opened with the local Open button; native file links require suffixes.",
+    "longDescription": "Open POSCAR, CONTCAR and XDATCAR by their original paths through the Structure Viewer thread tab, locally or on the connected remote host. XYZ/extxyz/traj native file entrypoints, element visibility, box selection, measurements and snapshots are included.",
     "category": "Education & Research",
     "capabilities": [
       "Interactive",

@@ -163,7 +163,7 @@ class StructureViews {
     this.follow = options.follow || null;
     const rules=frame.atoms.map((atom,index)=>options.display?.resolve(atom,index,options)||{...options,visible:true});
     this.visibleIndices=rules.flatMap((rule,index)=>rule.visible?[index]:[]);
-    const visibleSet=new Set(this.visibleIndices);
+    const visibleSet=new Set(this.visibleIndices),selectedSet=new Set(selected);
     const hydrogenBonds = options.hbonds ? StructureGeometry.hydrogenBonds(frame).filter(b=>visibleSet.has(b.donor)&&visibleSet.has(b.hydrogen)&&visibleSet.has(b.acceptor)) : [];
 
     const vertices = options.cell && frame.cell ? Array.from({length:8}, (_,mask) => Object.fromEntries(["x","y","z"].map((axis,j) => [axis, frame.cell.reduce((sum,v,k) => sum + ((mask>>k)&1)*v[j], 0)]))) : [];
@@ -190,7 +190,7 @@ class StructureViews {
         this.visibleIndices.forEach((originalIndex,index)=>{
           const atom=frame.atoms[originalIndex],rule=rules[originalIndex];
           const palette=StructureAppearance.palette(rule.palette,$3Dmol.elementColors);
-          const color=rule.palette==='custom'?rule.color:(palette[atom.elem]??0xff1493);
+          const color=selectedSet.has(originalIndex)?0x2455d9:(rule.palette==='custom'?rule.color:(palette[atom.elem]??0xff1493));
           const radius=StructureAppearance.radius(atom.elem)*options.scale;
           const style=rule.style==='sphere'?{sphere:{radius,color}}:rule.style==='stick'?{stick:{radius:.16,color}}:{sphere:{radius:radius*.45,color},stick:{radius:.10,color}};
           const key=JSON.stringify(style);if(!groups.has(key))groups.set(key,{style,indices:[]});groups.get(key).indices.push(index);
@@ -210,7 +210,12 @@ class StructureViews {
         }
       }
       if (options.labels) this.visibleIndices.forEach(i => {const atom=frame.atoms[i];viewer.addLabel(`${atom.elem}${i+1}`, {position:atom, fontSize:11, fontColor:"#222222", showBackground:false}, undefined, true);});
-      selected.filter(i=>visibleSet.has(i)).forEach(i => viewer.addLabel('×', {position:frame.atoms[i],fontSize:22,fontColor:'#075dce',bold:true,showBackground:false,inFront:true,alignment:'center'}, undefined, true));
+      for(const i of selected)if(visibleSet.has(i)) {
+        const atom=frame.atoms[i],rule=rules[i];
+        const radius=rule.style==='stick'?.19:StructureAppearance.radius(atom.elem)*options.scale*(rule.style==='ballstick'?.45:1);
+        if(rule.style==='stick')viewer.addSphere({center:atom,radius,color:0x2455d9});
+        viewer.addCustom(StructureSelection.surfaceMarker(atom,radius));
+      }
       if(selected.length>=2&&selected.length<=4)for(let j=1;j<selected.length;j++) {
         if(visibleSet.has(selected[j-1])&&visibleSet.has(selected[j]))viewer.addLine({start:frame.atoms[selected[j-1]],end:frame.atoms[selected[j]],color:'#075dce',linewidth:2});
       }

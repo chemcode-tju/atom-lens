@@ -1,7 +1,7 @@
 """Dependency-free MCP server for the native Codex file-editor entrypoint."""
 
 # Configuration
-plugin_version = "0.5.0"
+plugin_version = "0.6.0"
 resource_uri = "ui://structure-viewer/editor.html"
 
 from pathlib import Path
@@ -12,6 +12,9 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from trajectory import read_frames
 from snapshot import save_snapshot
+from path_access import StructurePaths
+
+selected_paths = StructurePaths()
 
 plugin_root = Path(__file__).resolve().parent
 
@@ -55,7 +58,7 @@ def tool_descriptor() -> dict[str, Any]:
         "_meta": {
             "ui": {"resourceUri": resource_uri, "visibility": ["app"]},
             "openai/ui": {"entrypoints": [{"type": "file", "extensions": [
-                ".extxyz", ".xyz", ".traj", ".poscar", ".contcar", ".vasp", ".xdatcar"]}]},
+                ".extxyz", ".xyz", ".traj", ".vasp"]}]},
         },
     }
 
@@ -70,9 +73,25 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
         return {}
     if method == "tools/list":
         return {"tools": [tool_descriptor(), {
+            "name": "open_structure_path", "title": "Structure Viewer",
+            "description": "Open an atomic structure in the viewer using its unchanged absolute path on this host, including bare POSCAR, CONTCAR and XDATCAR. Omit path to open the structure browser. Use this for user-requested VASP viewing instead of renaming or copying files.",
+            "inputSchema": {"type": "object", "additionalProperties": False,
+                            "properties": {"path": {"type": "string"}}},
+            "annotations": {"readOnlyHint": True, "openWorldHint": False},
+            "_meta": {"ui": {"resourceUri": resource_uri, "visibility": ["app", "model"]},
+                      "openai/ui": {"entrypoints": [{"type": "thread"}]}},
+        }, {
+            "name": "read_structure_source", "title": "Read selected VASP structure",
+            "description": "Read the structure already selected through the path browser.",
+            "inputSchema": {"type": "object", "additionalProperties": False,
+                            "properties": {"token": {"type": "string"}}, "required": ["token"]},
+            "annotations": {"readOnlyHint": True, "openWorldHint": False},
+            "_meta": {"ui": {"visibility": ["app"]}},
+        }, {
             "name": "read_trajectory_frames", "title": "Read trajectory frames",
             "description": "Read a bounded batch of complete XYZ or ASE trajectory frames from the host-selected file.",
             "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
+                "token": {"type": "string"},
                 "offset": {"type": "integer", "minimum": 0},
                 "frameLimit": {"type": "integer", "minimum": 1, "maximum": 32},
                 "version": {"type": "string"}}},
@@ -82,7 +101,7 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
             "name": "save_structure_snapshot", "title": "Save structure snapshot",
             "description": "Save a user-requested PNG/JPEG/PDF in structure-snapshots beside the opened file; never overwrite existing files.",
             "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
-                "name": {"type": "string"}, "data": {"type": "string"}}, "required": ["name", "data"]},
+                "token": {"type": "string"}, "name": {"type": "string"}, "data": {"type": "string"}}, "required": ["name", "data"]},
             "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False},
             "_meta": {"ui": {"visibility": ["app"]}},
         }]}
@@ -102,12 +121,19 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("A host-provided file name and resource URI are required.")
         return {"content": [{"type": "text", "text": f"Opening {file['name']}"}],
                 "structuredContent": {"file": file}}
+    if method == "tools/call" and params.get("name") == "open_structure_path":
+        result = selected_paths.open(params.get("arguments", {}).get("path"))
+        return {"content": [{"type": "text", "text": f"Structure Viewer on {result['host']}"}],
+                "structuredContent": result}
+    if method == "tools/call" and params.get("name") == "read_structure_source":
+        result = selected_paths.read_source(params)
+        return {"content": [{"type": "text", "text": "Read selected structure"}], "structuredContent": result}
     if method == "tools/call" and params.get("name") == "read_trajectory_frames":
-        batch = read_frames(params)
+        batch = read_frames(selected_paths.bind(params))
         return {"content": [{"type": "text", "text": f"Read {batch.get('frameCount', 0)} frames"}],
                 "structuredContent": batch}
     if method == "tools/call" and params.get("name") == "save_structure_snapshot":
-        result = save_snapshot(params)
+        result = save_snapshot(selected_paths.bind(params))
         return {"content": [{"type": "text", "text": f"Saved {result['path']}"}], "structuredContent": result}
     raise ValueError(f"Unsupported method or resource: {method}")
 

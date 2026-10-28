@@ -1,7 +1,7 @@
 "use strict";
 const $ = id => document.getElementById(id);
 const pending = new Map();
-let nextId = 1, fileRef, doc, frameIndex = 0, frameData, views;
+let nextId = 1, hostName = "当前主机", fileRef, doc, frameIndex = 0, frameData, views;
 let selection = [], timer = null, loading = false, readGeneration = 0;
 let displayState = new StructureSelection.DisplayState();
 let streamComplete = true, binaryTrajectory = false, pickedFile = false;
@@ -126,7 +126,7 @@ async function loadFile(file, reload = false) {
   try {
     while (generation === readGeneration) {
       const result = await request("tools/call", { name: "read_trajectory_frames", arguments: {
-        offset, frameLimit: offset === 0 ? 1 : 32, ...(version ? { version } : {})
+        ...(file.token ? {token:file.token} : {}), offset, frameLimit: offset === 0 ? 1 : 32, ...(version ? { version } : {})
       } });
       if (generation !== readGeneration) return;
       if (result.isError) throw Error(result.content?.find(c => c.text)?.text || "分段读取失败");
@@ -138,7 +138,7 @@ async function loadFile(file, reload = false) {
       doc.append(batch.text);
       if (first && !doc.count) throw Error("没有有效结构帧");
       streamComplete = batch.eof; offset = batch.nextOffset; version = batch.version;
-      if (first) { doc.frame(0); render(true); request("resources/subscribe", { uri: file.resourceUri }).catch(() => {}); }
+      if (first) { doc.frame(0); render(true); if(!file.token)request("resources/subscribe", { uri: file.resourceUri }).catch(() => {}); }
       else updateTimeline();
       status("");
       if (streamComplete) break;
@@ -156,9 +156,10 @@ async function loadFullFile(file) {
   $("source-toggle").hidden=false;
   fileRef = file; $("filename").textContent = file.name; status("");
   try {
-    const result = await request("resources/read", { uri: file.resourceUri, _meta: { "openai/resource": { representation: "text" } } });
+    const result = file.token ? await request('tools/call',{name:'read_structure_source',arguments:{token:file.token}}) : await request("resources/read", { uri: file.resourceUri, _meta: { "openai/resource": { representation: "text" } } });
+    if(result.isError)throw Error(result.content?.find(c=>c.text)?.text||'结构读取失败');
     if (generation !== readGeneration) return;
-    const content = result.contents?.find(c => c.uri === file.resourceUri) || result.contents?.[0];
+    const content = file.token ? result.structuredContent : (result.contents?.find(c => c.uri === file.resourceUri) || result.contents?.[0]);
     if (!content) throw Error("Codex 未返回文件内容");
     let text = content.text;
     if (text === undefined && content.blob) text = new TextDecoder().decode(Uint8Array.from(atob(content.blob), c => c.charCodeAt(0)));
@@ -167,7 +168,7 @@ async function loadFullFile(file) {
     doc = parsed;
     streamComplete = true;
     frameIndex = Math.min(frameIndex, doc.count - 1); selection = []; render(true);
-    request("resources/subscribe", { uri: file.resourceUri }).catch(() => {});
+    if(!file.token)request("resources/subscribe", { uri: file.resourceUri }).catch(() => {});
   } catch (error) { if (generation === readGeneration) status(`完整读取失败：${error.message}`, true); }
   finally { if (generation === readGeneration) { loading = false; } }
 }
@@ -178,8 +179,13 @@ window.addEventListener("message", event => {
     const p = pending.get(message.id); pending.delete(message.id); clearTimeout(p.timeout);
     message.error ? p.reject(Error(message.error.message || "宿主请求失败")) : p.resolve(message.result); return;
   }
-  if (message.method === "ui/notifications/tool-input") loadFile(message.params?.arguments?.file);
-  if (message.method === "ui/notifications/tool-result") loadFile(message.params?.structuredContent?.file);
+  if (message.method === "ui/notifications/tool-input" && message.params?.arguments?.file) loadFile(message.params.arguments.file);
+  if (message.method === "ui/notifications/tool-result") {
+    const result=message.params?.structuredContent;
+    if(result?.host){hostName=result.host;$("path-host").textContent=`${hostName} 上的完整路径`;}
+    if(result?.file)loadFile(result.file);
+    else if(result?.browser&&!doc)$("path-dialog").showModal();
+  }
   if (message.method === "notifications/resources/updated" && message.params?.uri === fileRef?.resourceUri) {
     loadFile(fileRef, true);
   }
@@ -235,7 +241,7 @@ $("follow").onchange=()=>{stop();if($("follow").checked)setFollow(Number($("foll
 $("follow-apply").onclick=()=>{stop();setFollow(Number($("follow-number").value)-1);};
 $("follow-selected").onclick=()=>setFollow(selection[selection.length-1]);
 $("source-toggle").onclick = () => { stop(); $("source-panel").hidden = !$("source-panel").hidden; if(doc)$("source").value=doc.frameText(frameIndex); };
-request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.5.0" }, appCapabilities: {} })
+request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.6.0" }, appCapabilities: {} })
   .then(() => { send("ui/notifications/initialized", {}); status("已连接，等待文件…"); })
   .catch(error => status(`连接失败：${error.message}`, true));
 
@@ -287,9 +293,26 @@ $("snapshot-save").onclick=async()=>{
       const url=URL.createObjectURL(new Blob([result.bytes],{type:result.mime})),link=document.createElement('a');link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);$("snapshot-result").textContent='已请求下载 '+name;
     }else{
       let binary='';for(let i=0;i<result.bytes.length;i+=32768)binary+=String.fromCharCode(...result.bytes.subarray(i,i+32768));
-      const saved=await request('tools/call',{name:'save_structure_snapshot',arguments:{name,data:btoa(binary)}});
+      const saved=await request('tools/call',{name:'save_structure_snapshot',arguments:{name,data:btoa(binary),...(fileRef?.token?{token:fileRef.token}:{})}});
       if(saved.isError)throw Error(saved.content?.find(c=>c.text)?.text||'保存失败');
       if(!saved.structuredContent?.path)throw Error('宿主未确认保存路径');$("snapshot-result").textContent='已保存：'+saved.structuredContent.path;
     }
   }catch(error){$("snapshot-result").textContent=error.message;}finally{$("snapshot-save").disabled=false;}
 };
+
+$("open-path").onclick=async()=>{
+  stop();$("structure-path").value=fileRef?.path||'';$("path-error").textContent='';$("path-dialog").showModal();
+  try {const r=await request('tools/call',{name:'open_structure_path',arguments:{}});if(r.structuredContent?.host){hostName=r.structuredContent.host;$("path-host").textContent=`${hostName} 上的完整路径`;}}catch(e){$("path-error").textContent=e.message;}
+};
+$("path-close").onclick=()=>$("path-dialog").close();
+$("path-load").onclick=async()=>{
+  const path=$("structure-path").value.trim();if(!path)return;
+  $("path-load").disabled=true;$("path-error").textContent='';
+  try {
+    const result=await request('tools/call',{name:'open_structure_path',arguments:{path}});
+    if(result.isError)throw Error(result.content?.find(c=>c.text)?.text||'打开失败');
+    if(!result.structuredContent?.file)throw Error('未返回结构文件');
+    $("path-dialog").close();await loadFile(result.structuredContent.file);
+  }catch(e){$("path-error").textContent=e.message;}finally{$("path-load").disabled=false;}
+};
+$("structure-path").onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();$("path-load").click();}};

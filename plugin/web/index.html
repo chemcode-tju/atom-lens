@@ -2,7 +2,7 @@
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Structure Viewer</title><style>/*__STYLE__*/</style></head>
 <body>
 <main>
-  <header><h1 id="filename">Structure Viewer</h1><div class="file-actions"><button id="open-file">打开</button><input id="file-picker" type="file" hidden><button id="snapshot">快照</button><button id="display-settings">显示设置</button><button id="source-toggle">源码</button></div></header>
+  <header><h1 id="filename">Structure Viewer</h1><div class="file-actions"><button id="open-path">按路径打开</button><button id="open-file">本地文件</button><input id="file-picker" type="file" hidden><button id="snapshot">快照</button><button id="display-settings">显示设置</button><button id="source-toggle">源码</button></div></header>
   <div class="toolbar">
     <select id="style" aria-label="显示方式"><option value="sphere">原子球</option><option value="ballstick">球棍</option><option value="stick">线棒</option></select>
     <select id="palette" aria-label="原子配色"><option value="jmol">Jmol</option><option value="rasmol">RasMol / CPK</option><option value="vesta">VESTA</option></select>
@@ -23,6 +23,7 @@
     <div class="follow-row"><label><input id="follow" type="checkbox">跟随原子</label><input id="follow-number" type="number" min="1" value="1" aria-label="跟随原子序号"><button id="follow-apply">指定中心</button></div>
   </footer>
 </main>
+<dialog id="path-dialog"><h2>打开结构文件</h2><label for="structure-path" id="path-host">当前主机上的完整路径</label><input id="structure-path" type="text" placeholder="/完整路径/POSCAR" autocomplete="off" spellcheck="false"><output id="path-error" role="alert"></output><div class="dialog-actions"><button id="path-close">关闭</button><button id="path-load">打开</button></div></dialog>
 <dialog id="display-dialog">
   <h2>显示设置</h2>
   <fieldset><legend>元素显隐</legend><div id="element-list"></div><button id="show-elements">全部显示</button></fieldset>
