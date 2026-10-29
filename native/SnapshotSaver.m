@@ -23,17 +23,20 @@
 }
 - (void)quitHelper:(id)sender { self.stopping = YES; [self.connection terminate]; [NSApp terminate:nil]; }
 - (void)applicationWillTerminate:(NSNotification *)notification { self.stopping = YES; [self.connection terminate]; }
-- (NSString *)save:(NSData *)data name:(NSString *)name {
+- (NSString *)save:(NSData *)data name:(NSString *)name language:(NSString *)language {
+    BOOL english = [language isEqualToString:@"en"];
     [NSApp activateIgnoringOtherApps:YES];
     NSSavePanel *panel = [NSSavePanel savePanel];
-    panel.title = @"保存结构图像或动画"; panel.nameFieldStringValue = name;
+    panel.title = english ? @"Save structure image or animation" : @"保存结构图像或动画";
+    panel.prompt = english ? @"Save" : @"保存";
+    panel.nameFieldLabel = english ? @"Save As:" : @"存储为："; panel.nameFieldStringValue = name;
     panel.allowedContentTypes = @[[UTType typeWithFilenameExtension:name.pathExtension]];
     panel.canCreateDirectories = YES;
     panel.directoryURL = [[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask].firstObject;
     if ([panel runModal] != NSModalResponseOK) return @"cancelled";
     NSError *error = nil;
     if (![data writeToURL:panel.URL options:NSDataWritingAtomic error:&error]) {
-        NSAlert *alert = [NSAlert new]; alert.messageText = @"保存失败"; alert.informativeText = error.localizedDescription;
+        NSAlert *alert = [NSAlert new]; alert.messageText = english ? @"Save failed" : @"保存失败"; alert.informativeText = error.localizedDescription;
         [alert runModal]; return @"error";
     }
     return @"saved";
@@ -50,7 +53,7 @@
     if (movie) valid = valid && image.length >= 12 && memcmp(((const char *)image.bytes)+4, "ftyp", 4) == 0;
     if (!valid) return @"error";
     __block NSString *result;
-    dispatch_sync(dispatch_get_main_queue(), ^{ result = [self save:image name:name]; });
+    dispatch_sync(dispatch_get_main_queue(), ^{ result = [self save:image name:name language:snapshot[@"language"]]; });
     return result;
 }
 - (void)watch {

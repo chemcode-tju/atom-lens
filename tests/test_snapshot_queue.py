@@ -23,10 +23,11 @@ class QueueTests(unittest.TestCase):
             try:
                 self.assertEqual(json.loads(process.stdout.readline()), {"kind": "ready"})
                 with patch("local_export.export_folder", return_value=folder):
-                    request = prepare_local_snapshot({"name": "test.png", "data": base64.b64encode(b"\x89PNG\r\n\x1a\ntest").decode()})
+                    request = prepare_local_snapshot({"name": "test.png", "language": "en", "data": base64.b64encode(b"\x89PNG\r\n\x1a\ntest").decode()})
                     payload = json.loads(process.stdout.readline())
                     self.assertEqual(payload["id"], request["id"])
                     self.assertEqual(payload["kind"], "snapshot")
+                    self.assertEqual(payload["language"], "en")
                     self.assertEqual(snapshot_save_status(request)["status"], "choosing")
                     process.stdin.write(json.dumps({**request, "status": "cancelled"}) + "\n")
                     process.stdin.flush()

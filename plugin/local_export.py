@@ -30,10 +30,10 @@ def prepare_local_snapshot(arguments: dict[str, Any]) -> dict[str, str]:
     with tempfile.TemporaryDirectory(prefix="structure-stage-") as temporary:
         path = Path(temporary) / name
         path.write_bytes(base64.b64decode(encoded, validate=True))
-        return prepare_local_file(path, name)
+        return prepare_local_file(path, name, arguments.get("language", "zh-CN"))
 
 
-def prepare_local_file(path: Path, name: str) -> dict[str, str]:
+def prepare_local_file(path: Path, name: str, language: str = "zh-CN") -> dict[str, str]:
     from snapshot import validate_file
     validate_file(path, name)
     encoded = base64.b64encode(path.read_bytes()).decode("ascii")
@@ -47,7 +47,7 @@ def prepare_local_file(path: Path, name: str) -> dict[str, str]:
     target = folder / f"{identifier}.json"
     with target.open("x") as stream:
         os.chmod(target, 0o600)
-        json.dump({"id": identifier, "name": name, "data": encoded}, stream)
+        json.dump({"id": identifier, "name": name, "data": encoded, "language": "en" if language == "en" else "zh-CN"}, stream)
     (folder / f"{identifier}.status").write_text("pending")
     (folder / f"{identifier}.request").touch()
     return {"id": identifier}

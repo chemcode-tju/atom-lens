@@ -127,7 +127,7 @@ class MediaExports:
             raise ValueError("导出尚未完成")
         path = job["folder"] / job["name"]
         if arguments.get("destination") == "helper":
-            return prepare_local_file(path, job["name"])
+            return prepare_local_file(path, job["name"], arguments.get("language", "zh-CN"))
         return save_file(path, job["name"], params)
 
     def cancel(self, arguments: dict[str, Any]) -> dict[str, Any]:

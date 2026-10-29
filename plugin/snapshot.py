@@ -19,20 +19,20 @@ def snapshot_context(params: dict[str, Any]) -> dict[str, Any]:
     return {"host": socket.gethostname(), "nativePicker": platform.system() == "Darwin", "directory": directory}
 
 
-def choose_mac_directory(default_directory: str) -> Path | None:
+def choose_mac_directory(default_directory: str, language: str = "zh-CN") -> Path | None:
     """Use the macOS folder chooser; pass paths as arguments, never script text."""
     default = Path(default_directory) if default_directory else Path.home() / "Documents"
     if not default.is_dir():
         default = Path.home()
     script = '''on run argv
 try
-    set chosenFolder to choose folder with prompt "保存结构快照到…" default location (POSIX file (item 1 of argv))
+    set chosenFolder to choose folder with prompt (item 2 of argv) default location (POSIX file (item 1 of argv))
     return POSIX path of chosenFolder
 on error number -128
     return ""
 end try
 end run'''
-    result = subprocess.run(["/usr/bin/osascript", "-e", script, str(default)], capture_output=True, text=True, timeout=600, check=False)
+    result = subprocess.run(["/usr/bin/osascript", "-e", script, str(default), "Save structure image or animation to…" if language == "en" else "保存结构图像或动画到…"], capture_output=True, text=True, timeout=600, check=False)
     if result.returncode:
         raise ValueError(f"无法打开 Mac 保存窗口：{result.stderr.strip()}")
     return Path(result.stdout.strip()) if result.stdout.strip() else None
@@ -63,7 +63,7 @@ def save_file(source: Path, name: str, params: dict[str, Any]) -> dict[str, Any]
     if destination == "native":
         if not context["nativePicker"]:
             raise ValueError("服务器不能打开 Mac 文件夹窗口，请选择保存到本地 Mac")
-        directory = choose_mac_directory(context["directory"])
+        directory = choose_mac_directory(context["directory"], arguments.get("language", "zh-CN"))
         if directory is None:
             return {"cancelled": True}
     elif destination == "server":

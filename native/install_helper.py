@@ -20,7 +20,7 @@ def main() -> None:
     executable.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(["/usr/bin/xcrun", "clang", "-fobjc-arc", "-fblocks", str(root / "SnapshotSaver.m"), "-o", str(executable), "-framework", "Cocoa", "-framework", "UniformTypeIdentifiers"], check=True)
     info = {"CFBundleName": "Structure Snapshot Saver", "CFBundleIdentifier": label,
-            "CFBundleExecutable": "SnapshotSaver", "CFBundlePackageType": "APPL", "CFBundleVersion": "3", "LSUIElement": True}
+            "CFBundleExecutable": "SnapshotSaver", "CFBundlePackageType": "APPL", "CFBundleVersion": "4", "LSUIElement": True}
     (contents / "Info.plist").write_bytes(plistlib.dumps(info))
     subprocess.run(["/usr/bin/codesign", "--force", "--sign", "-", str(app)], check=True)
     subprocess.run(["/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", "-f", str(app)], check=True)

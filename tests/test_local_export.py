@@ -21,7 +21,7 @@ class LocalExportTests(unittest.TestCase):
             first = prepare_local_snapshot(arguments)
             folder = Path(temporary) / ".cache/structure-viewer/exports"
             target = folder / f"{first['id']}.json"
-            self.assertEqual(json.loads(target.read_text()), {**arguments, "id": first["id"]})
+            self.assertEqual(json.loads(target.read_text()), {**arguments, "id": first["id"], "language": "zh-CN"})
             self.assertEqual(target.stat().st_mode & 0o777, 0o600)
             os.utime(target, (time.time() - 90000,) * 2)
             unrelated = folder / "keep.json"

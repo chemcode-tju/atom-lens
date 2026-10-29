@@ -23,7 +23,7 @@ async function exportContext(prefix){
 }
 async function saveMedia(id,host,prefix){
   const local=$(prefix+'-destination').value==='local',output=$(prefix+'-result');
-  const saved=await mediaCall({action:'save',id,destination:local?(host.nativePicker?'native':'helper'):'server',
+  const saved=await mediaCall({action:'save',id,language:StructureI18n.language,destination:local?(host.nativePicker?'native':'helper'):'server',
     directory:$(prefix+'-directory').value.trim(),...(fileRef?.token?{token:fileRef.token}:{})});
   if(!local||host.nativePicker){
     if(!saved.cancelled&&!saved.path)throw Error('宿主未确认保存结果');

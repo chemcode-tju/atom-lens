@@ -1,7 +1,7 @@
 """Dependency-free MCP server for the native Codex file-editor entrypoint."""
 
 # Configuration
-plugin_version = "0.9.0"
+plugin_version = "0.9.1"
 resource_uri = "ui://structure-viewer/editor.html"
 
 from pathlib import Path
@@ -28,6 +28,7 @@ def widget_html() -> str:
     html = (plugin_root / "web/index.html").read_text()
     for placeholder, filename in [
         ("/*__STYLE__*/", "style.css"),
+        ("/*__I18N__*/", "i18n.js"),
         ("/*__3DMOL__*/", "vendor/3Dmol-min.js"),
         ("/*__PARSER__*/", "parser.js"),
         ("/*__APPEARANCE__*/", "appearance.js"),
@@ -42,6 +43,8 @@ def widget_html() -> str:
         ("/*__ANIMATION__*/", "animation.js"),
     ]:
         asset = (plugin_root / "web" / filename).read_text()
+        if filename == "i18n.js":
+            asset = asset.replace("/*__LOCALES__*/{}", (plugin_root / "web/locales.json").read_text())
         if filename == "vendor/3Dmol-min.js":
             # Pinned-renderer adapter: modest ambient fill and a broad highlight.
             # The upstream imposter materials expose no lighting controls.
@@ -83,6 +86,7 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
             "name": "structure_media_export", "title": "Export structure images and animations",
             "description": "User-requested chunked PNG/JPEG/PDF and GIF/MOV/MP4 export, with native Mac or server saving.",
             "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
+                "language": {"type": "string", "enum": ["zh-CN", "en"]},
                 "action": {"type": "string", "enum": ["begin", "append", "finish", "status", "save", "cancel"]},
                 "id": {"type": "string"}, "kind": {"type": "string", "enum": ["image", "animation"]},
                 "name": {"type": "string"}, "fps": {"type": "number", "exclusiveMinimum": 0},
@@ -124,7 +128,7 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
         }, {
             "name": "prepare_local_snapshot", "title": "Prepare Mac snapshot save",
             "description": "Stage a user-requested image for the installed Mac snapshot saver to retrieve over SSH.",
-            "inputSchema": {"type": "object", "additionalProperties": False, "properties": {"name": {"type": "string"}, "data": {"type": "string"}}, "required": ["name", "data"]},
+            "inputSchema": {"type": "object", "additionalProperties": False, "properties": {"language": {"type": "string", "enum": ["zh-CN", "en"]}, "name": {"type": "string"}, "data": {"type": "string"}}, "required": ["name", "data"]},
             "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False},
             "_meta": {"ui": {"visibility": ["app"]}},
         }, {

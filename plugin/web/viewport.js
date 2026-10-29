@@ -290,7 +290,11 @@ class StructureViews {
       if(options.labels)this.visibleIndices.forEach(i=>{
         const atom=frame.atoms[i],rule=rules[i];
         const radius=rule.style==='stick'?.19:StructureAppearance.radius(atom.elem)*options.scale*(rule.style==='ballstick'?.45:1);
-        const label=viewer.addLabel(String(i+1),{position:atom,font:'Arial',fontSize:13*(options.labelScale||1),bold:true,fontColor:'#000000',showBackground:false,inFront:false,alignment:'center'},undefined,true);
+        // Rasterize above device resolution, then shrink the sprite to keep
+        // the same screen size. A 13px texture was enlarged on Retina screens.
+        const sampling=Math.max(3,Math.ceil(globalThis.devicePixelRatio||1));
+        const label=viewer.addLabel(String(i+1),{position:atom,font:'Arial',fontSize:Math.round(14*(options.labelScale||1)*sampling),bold:true,fontColor:'#000000',fontOpacity:1,borderThickness:0,padding:4*sampling,showBackground:false,inFront:false,alignment:'center'},undefined,true);
+        label.sprite.scale.set(1/sampling,1/sampling,1);
         pane.atomLabels.push({atom,radius,label});
       });
       this.prepareSelection(pane,frame,options,selected);
