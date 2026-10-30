@@ -35,10 +35,15 @@ console.log('Selection updates preserve the atom model and camera, including cle
 // Exercise actual pointer handlers and ResizeObserver without a GPU.
 {
  const handlers={},translations=[],resizes=[],paints=[];
- const queued=[];global.requestAnimationFrame=callback=>{queued.push(callback);return queued.length;};
- const flush=()=>{const batch=queued.splice(0);batch.forEach(fn=>fn());};
+ const queued=new Map(),timers=new Map();let ticket=0;
+ global.requestAnimationFrame=callback=>{queued.set(++ticket,callback);return ticket;};
+ global.cancelAnimationFrame=id=>queued.delete(id);
+ global.setTimeout=callback=>{timers.set(++ticket,callback);return ticket;};
+ global.clearTimeout=id=>timers.delete(id);
+ const flush=()=>{const batch=[...queued.values()];queued.clear();batch.forEach(fn=>fn());};
+ const settle=()=>{const batch=[...timers.values()];timers.clear();batch.forEach(fn=>fn());flush();flush();};
  const canvas={clientWidth:400,clientHeight:600};
- const layer={querySelector:()=>({hidden:true,style:{}}),addEventListener:()=>{}};
+ const layer={querySelector:()=>({hidden:true,style:{}}),addEventListener:()=>{},setPointerCapture:()=>{},getBoundingClientRect:()=>({left:0,top:0})};
  const title={};
  const element={hidden:false,querySelector:selector=>selector==='.view-canvas'?canvas:selector==='.pointer-layer'?layer:title,
    addEventListener:(name,fn)=>{(handlers[name]??=[]).push(fn);},setPointerCapture:()=>{}};
@@ -56,13 +61,32 @@ console.log('Selection updates preserve the atom model and camera, including cle
  emit('pointerdown',{button:2,pointerId:2,clientX:10,clientY:20});
  emit('pointermove',{pointerId:2,clientX:30,clientY:15});assert.deepEqual(translations,[[20,-5]]);
  emit('pointerup',{pointerId:2});emit('pointermove',{pointerId:2,clientX:40,clientY:20});assert.equal(translations.length,1);
- resizeCallback();resizeCallback();resizeCallback();assert.equal(queued.length,1);flush();
+ resizeCallback();resizeCallback();resizeCallback();assert.equal(timers.size,1);assert.equal(resizes.length,0);settle();
  assert.deepEqual(resizes,[[400,600]]);assert.equal(paints.length,0);
- resizeCallback();flush();assert.equal(resizes.length,1);
- canvas.clientWidth=300;resizeCallback();flush();assert.deepEqual(resizes[1],[300,600]);
- element.hidden=true;canvas.clientWidth=0;resizeCallback();flush();assert.equal(resizes.length,2);
- element.hidden=false;canvas.clientWidth=450;resizeCallback();flush();assert.deepEqual(resizes[2],[450,600]);
- console.log('Right drag pans; left drag remains available to rotation; resize does not refit.');
+ resizeCallback();settle();assert.equal(resizes.length,1);
+ canvas.clientWidth=300;resizeCallback();settle();assert.deepEqual(resizes[1],[300,600]);
+ element.hidden=true;canvas.clientWidth=0;resizeCallback();settle();assert.equal(resizes.length,2);
+ element.hidden=false;canvas.clientWidth=450;resizeCallback();settle();assert.deepEqual(resizes[2],[450,600]);
+ // During a resize burst the previous frame stays visible until two paint
+ // opportunities after the final resize, including when input flushes it early.
+ let copies=0,removals=0;
+ canvas.querySelector=()=>({width:900,height:1200});
+ element.append=()=>{};
+ global.document.createElement=()=>({getContext:()=>({drawImage:()=>copies++}),remove:()=>removals++});
+ const pane=interaction.panes[0];pane.ready=true;
+ canvas.clientWidth=460;resizeCallback();
+ canvas.clientWidth=470;resizeCallback();
+ assert.equal(copies,1);assert.ok(pane.resizeCover);assert.equal(resizes.length,3);
+ emit('pointerdown',{button:0,pointerId:3,clientX:100,clientY:100});
+ assert.deepEqual(resizes.at(-1),[470,600]);assert.ok(pane.resizeCover);
+ flush();assert.ok(pane.resizeCover);flush();assert.equal(pane.resizeCover,null);assert.equal(removals,1);
+ canvas.clientWidth=480;resizeCallback();settle();assert.equal(copies,2);assert.equal(removals,2);
+ interaction.mode='box';let boxes=0;interaction.onBox=()=>boxes++;
+ const mouse={button:0,pointerId:1,clientX:100,clientY:100,preventDefault(){}};
+ layer.onpointerdown(mouse);layer.onpointerup(mouse);assert.equal(boxes,0);
+ layer.onpointerdown(mouse);layer.onpointermove({...mouse,clientX:102});layer.onpointerup({...mouse,clientX:102});assert.equal(boxes,0);
+ layer.onpointerdown(mouse);layer.onpointercancel();layer.onpointerup(mouse);assert.equal(boxes,0);
+ console.log('Settled resize paints once; duplicate sizes and box-mode clicks do not reset the view or selection.');
 }
 
 // Shift bypasses rotation/zoom, ray-picks the front atom, and toggles a dragged
@@ -88,4 +112,34 @@ console.log('Selection updates preserve the atom model and camera, including cle
  assert.equal(emit('pointerdown',{shiftKey:false}).stopped,undefined);
  assert.equal(emit('pointerdown',{button:2}).stopped,undefined);
  console.log('Shift click/front-atom picking, drag toggle, hidden-atom exclusion, jitter and cancellation passed.');
+}
+
+{
+ const {labelScreenScale}=require('../plugin/web/viewport.js');
+ assert.equal(labelScreenScale(100,20,12),1); // normal close-up capped at 20px
+ assert.equal(labelScreenScale(1000,20,12),1);
+ const far=labelScreenScale(4,20,12);
+ assert.ok(far*20<=4);assert.ok(far>0);
+ assert.ok(labelScreenScale(.01,20,12)<.001); // no forced minimum
+ assert.ok(labelScreenScale(10,20,35)*35<=8.5); // multi-digit IDs fit the atom
+ assert.equal(labelScreenScale(40,20,35),labelScreenScale(250,125,218.75)); // 600 DPI export
+ console.log('Labels scale with projected atom diameter, cap at 20px, and preserve export scaling.');
+}
+
+// A restored GPU context recreates label materials without moving the camera.
+// Its reset scale must be corrected even if the view cache still matches.
+{
+ const scales=[];let paints=0;
+ global.$3Dmol={Matrix4:class {getInverse(){return {elements:[1,0,0,0,0,1,0,0,0,0,1]};}}};
+ const atom={x:0,y:0,z:0};
+ const label={sprite:{material:{},position:{set(){}},scale:{set:(x,y)=>scales.push([x,y])}}};
+ const renderer={getView:()=>[0,0,0,0,0,0,0,1],modelGroup:{matrixWorld:{}},camera:{position:{clone:()=>({applyMatrix4:()=>({x:0,y:0,z:10})})}},
+   modelToScreen:()=>({x:50,y:50}),screenToModelDistance:()=>.1,render:()=>paints++};
+ const pane={viewer:renderer,preset:'xz',canvas:{clientWidth:100,clientHeight:100},atomLabels:[{atom,radius:1,label,sampling:3,fontSize:20,textWidth:12}]};
+ const views=Object.create(StructureViews.prototype);
+ views.drawSelection(pane);assert.equal(scales.length,1);
+ views.drawSelection(pane);assert.equal(scales.length,1);
+ label.sprite.material={};views.drawSelection(pane);
+ assert.equal(scales.length,2);assert.deepEqual(scales[0],scales[1]);assert.equal(paints,2);
+ console.log('Context recovery reapplies label scales without requiring a camera change.');
 }

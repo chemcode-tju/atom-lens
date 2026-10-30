@@ -6,6 +6,11 @@ function projectToView([a,b,c], [x,y,z,w]) {
     2*(x*y+z*w)*a + (1-2*(x*x+z*z))*b + 2*(y*z-x*w)*c,
     2*(x*z-y*w)*a + 2*(y*z+x*w)*b + (1-2*(x*x+y*y))*c];
 }
+function labelScreenScale(diameter, fontSize, textWidth) {
+  // No minimum: distant tiny atoms must not be buried under oversized IDs.
+  if(!Number.isFinite(diameter)||diameter<=0)return 0;
+  return Math.min(1,0.85*diameter/Math.max(fontSize,textWidth));
+}
 class StructureViews {
   constructor(container, onAtom, onBox) {
     this.container = container;
@@ -30,7 +35,7 @@ class StructureViews {
     element.querySelector(".view-title").textContent = this.title(preset);
     element.querySelector(".view-title").onclick = () => this.activate(index);
     element.querySelector(".view-title").ondblclick = () => { this.activate(index); this.toggleExpand(); };
-    element.addEventListener("pointerdown", () => this.activate(index), true);
+    element.addEventListener("pointerdown", () => { this.commitResize(pane); this.activate(index); }, true);
     element.addEventListener("mousedown", () => this.activate(index), true);
     viewer.setViewChangeCallback(() => { this.drawAxes(pane); this.drawSelection(pane); });
     // Own resize scheduling; the pinned renderer's automatic listeners are
@@ -57,14 +62,15 @@ class StructureViews {
     let pointer = null;
     layer.onpointerdown = event => {
       if (event.button !== 0) return;
-      pointer = {id: event.pointerId, x: event.clientX, y: event.clientY, startX:event.clientX, startY:event.clientY};
+      pointer = {id: event.pointerId, x: event.clientX, y: event.clientY, startX:event.clientX, startY:event.clientY,mode:this.mode,dragged:false};
       if(this.mode==='box') {const box=layer.querySelector('.selection-rectangle');box.hidden=false;box.style.cssText='left:0;top:0;width:0;height:0';}
       layer.setPointerCapture(event.pointerId); event.preventDefault();
     };
     layer.onpointermove = event => {
       if (!pointer || pointer.id !== event.pointerId) return;
       const dx = event.clientX - pointer.x, dy = event.clientY - pointer.y;
-      if(this.mode==='box') {
+      if(Math.hypot(event.clientX-pointer.startX,event.clientY-pointer.startY)>4)pointer.dragged=true;
+      if(pointer.mode==='box') {
         const rect=layer.getBoundingClientRect(),box=layer.querySelector('.selection-rectangle');
         box.style.cssText=`left:${Math.min(pointer.startX,event.clientX)-rect.left}px;top:${Math.min(pointer.startY,event.clientY)-rect.top}px;width:${Math.abs(event.clientX-pointer.startX)}px;height:${Math.abs(event.clientY-pointer.startY)}px`;
       } else if (this.mode === "pan") viewer.translateScene(dx, dy);
@@ -72,25 +78,49 @@ class StructureViews {
       pointer.x = event.clientX; pointer.y = event.clientY;
     };
     layer.onpointerup = event => {
-      if(pointer&&this.mode==='box') {
+      if(pointer?.id===event.pointerId&&pointer.mode==='box'&&pointer.dragged) {
         const atoms=this.latest?.[0].atoms||[];
         const points=this.visibleIndices.map(index=>({...viewer.modelToScreen(atoms[index]),index}));
         this.onBox(StructureSelection.inRectangle(points,{x:pointer.startX+scrollX,y:pointer.startY+scrollY},{x:event.clientX+scrollX,y:event.clientY+scrollY}),event.shiftKey);
       }
       layer.querySelector('.selection-rectangle').hidden=true;pointer=null;
     };
-    layer.onpointercancel=()=>{layer.querySelector('.selection-rectangle').hidden=true;pointer=null;};
+    layer.onpointercancel=layer.onlostpointercapture=()=>{layer.querySelector('.selection-rectangle').hidden=true;pointer=null;};
     layer.addEventListener("wheel", event => { event.preventDefault(); viewer.zoom(Math.exp(-event.deltaY * 0.001)); }, {passive: false});
   }
   scheduleResize(pane) {
-    if(pane.resizeTicket)return;
-    pane.resizeTicket=requestAnimationFrame(()=>{
-      pane.resizeTicket=null;
-      const width=pane.canvas.clientWidth,height=pane.canvas.clientHeight;
+    const width=pane.canvas.clientWidth,height=pane.canvas.clientHeight;
+    const size=`${width}:${height}:${globalThis.devicePixelRatio||1}`;
+    if(pane.element.hidden||width<=0||height<=0)return;
+    if(!pane.resizeTimer&&pane.lastSize===size)return;
+    // Keep an opaque copy over the WebGL surface while the host changes its
+    // compositor backing layer. Only resize the GPU buffer after dragging stops.
+    if(!pane.resizeCover&&pane.ready){
+      const source=pane.canvas.querySelector('canvas');
+      if(source?.width&&source?.height){
+        const cover=document.createElement('canvas');cover.className='resize-cover';
+        cover.width=source.width;cover.height=source.height;
+        try{cover.getContext('2d').drawImage(source,0,0);pane.element.append(cover);pane.resizeCover=cover;}catch{}
+      }
+    }
+    clearTimeout(pane.resizeTimer);
+    cancelAnimationFrame(pane.resizeReveal);
+    pane.resizeTimer=setTimeout(()=>this.commitResize(pane),140);
+  }
+  commitResize(pane) {
+    if(!pane.resizeTimer)return;
+    clearTimeout(pane.resizeTimer);pane.resizeTimer=null;
+    cancelAnimationFrame(pane.resizeReveal);
+    const width=pane.canvas.clientWidth,height=pane.canvas.clientHeight;
+    if(!pane.element.hidden&&width>0&&height>0){
       const size=`${width}:${height}:${globalThis.devicePixelRatio||1}`;
-      if(pane.element.hidden||width<=0||height<=0||pane.lastSize===size)return;
-      pane.lastSize=size;
-      pane.viewer.resize();
+      if(pane.lastSize!==size){pane.viewer.resize();pane.lastSize=size;}
+    }
+    // Let the new WebGL frame reach the compositor before uncovering it.
+    pane.resizeReveal=requestAnimationFrame(()=>{
+      pane.resizeReveal=requestAnimationFrame(()=>{
+        if(!pane.resizeTimer){pane.resizeCover?.remove();pane.resizeCover=null;}
+      });
     });
   }
   bindShiftSelection(pane) {
@@ -204,7 +234,11 @@ class StructureViews {
   drawSelection(pane) {
     if(pane.drawingSelection)return;
     const viewer=pane.viewer,view=viewer.getView(),key=JSON.stringify([view,pane.preset,pane.canvas.clientWidth,pane.canvas.clientHeight]);
-    if(pane.markerView===key)return;
+    // Context recovery recreates label materials and resets sprite scales even
+    // when the camera is unchanged. Reapply position/scale in that case.
+    const labelMaterial=pane.atomLabels?.[0]?.label.sprite.material;
+    if(pane.markerView===key&&pane.labelMaterial===labelMaterial)return;
+    pane.labelMaterial=labelMaterial;
     if(!pane.markers?.length&&!pane.atomLabels?.length){pane.markerView=key;return;}
     pane.drawingSelection=true;
     try {
@@ -214,10 +248,14 @@ class StructureViews {
       const camera=viewer.camera.position.clone().applyMatrix4(inverse);
       const q=view.slice(4,8),[x,y,z,w]=q;
       const forward=[inverse.elements[8],inverse.elements[9],inverse.elements[10]];
-      for(const {label,atom,radius} of pane.atomLabels||[]) {
+      for(const {label,atom,radius,sampling,fontSize,textWidth} of pane.atomLabels||[]) {
         const delta=pane.preset==='perspective'?[camera.x-atom.x,camera.y-atom.y,camera.z-atom.z]:forward;
         const norm=Math.hypot(...delta),offset=radius*1.01;
         label.sprite.position.set(atom.x+delta[0]/norm*offset,atom.y+delta[1]/norm*offset,atom.z+delta[2]/norm*offset);
+        const origin=viewer.modelToScreen(atom);
+        const unitsPerPixel=viewer.screenToModelDistance({x:origin.x+1,y:origin.y},atom);
+        const factor=labelScreenScale(2*radius/unitsPerPixel,fontSize,textWidth)/sampling;
+        label.sprite.scale.set(factor,factor,1);
       }
       let combined={vertexArr:[],normalArr:[],faceArr:[],color:0x004500,opacity:1};
       const flush=()=>{if(combined.vertexArr.length)pane.markerShapes.push(viewer.addCustom(combined));combined={vertexArr:[],normalArr:[],faceArr:[],color:0x004500,opacity:1};};
@@ -351,9 +389,10 @@ class StructureViews {
         // Rasterize above device resolution, then shrink the sprite to keep
         // the same screen size. A 13px texture was enlarged on Retina screens.
         const sampling=Math.max(3,Math.ceil(globalThis.devicePixelRatio||1));
-        const label=viewer.addLabel(String(i+1),{position:atom,font:'Arial',fontSize:Math.round(14*(options.labelScale||1)*sampling),bold:true,fontColor:'#000000',fontOpacity:1,borderThickness:0,padding:4*sampling,showBackground:false,inFront:false,alignment:'center'},undefined,true);
+        const fontSize=20*(options.labelScale||1);
+        const label=viewer.addLabel(String(i+1),{position:atom,font:'Arial',fontSize:Math.round(fontSize*sampling),bold:true,fontColor:'#000000',fontOpacity:1,borderThickness:0,padding:4*sampling,showBackground:false,inFront:false,alignment:'center'},undefined,true);
         label.sprite.scale.set(1/sampling,1/sampling,1);
-        pane.atomLabels.push({atom,radius,label});
+        pane.atomLabels.push({atom,radius,label,sampling,fontSize,textWidth:label.context.measureText(String(i+1)).width/sampling});
       });
       this.prepareSelection(pane,frame,options,selected);
       pane.ready = true;
@@ -367,4 +406,4 @@ class StructureViews {
     }
   }
 }
-if (typeof module !== "undefined" && module.exports) module.exports = {projectToView, viewQuaternions, StructureViews};
+if (typeof module !== "undefined" && module.exports) module.exports = {projectToView, viewQuaternions, StructureViews, labelScreenScale};
