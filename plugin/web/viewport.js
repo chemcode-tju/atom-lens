@@ -389,7 +389,7 @@ class StructureViews {
         // Rasterize above device resolution, then shrink the sprite to keep
         // the same screen size. A 13px texture was enlarged on Retina screens.
         const sampling=Math.max(3,Math.ceil(globalThis.devicePixelRatio||1));
-        const fontSize=20*(options.labelScale||1);
+        const fontSize=14*(options.labelScale||1);
         const label=viewer.addLabel(String(i+1),{position:atom,font:'Arial',fontSize:Math.round(fontSize*sampling),bold:true,fontColor:'#000000',fontOpacity:1,borderThickness:0,padding:4*sampling,showBackground:false,inFront:false,alignment:'center'},undefined,true);
         label.sprite.scale.set(1/sampling,1/sampling,1);
         pane.atomLabels.push({atom,radius,label,sampling,fontSize,textWidth:label.context.measureText(String(i+1)).width/sampling});

@@ -116,14 +116,14 @@ console.log('Selection updates preserve the atom model and camera, including cle
 
 {
  const {labelScreenScale}=require('../plugin/web/viewport.js');
- assert.equal(labelScreenScale(100,20,12),1); // normal close-up capped at 20px
- assert.equal(labelScreenScale(1000,20,12),1);
- const far=labelScreenScale(4,20,12);
- assert.ok(far*20<=4);assert.ok(far>0);
- assert.ok(labelScreenScale(.01,20,12)<.001); // no forced minimum
- assert.ok(labelScreenScale(10,20,35)*35<=8.5); // multi-digit IDs fit the atom
- assert.equal(labelScreenScale(40,20,35),labelScreenScale(250,125,218.75)); // 600 DPI export
- console.log('Labels scale with projected atom diameter, cap at 20px, and preserve export scaling.');
+ assert.equal(labelScreenScale(100,14,8),1); // normal close-up capped at 14px
+ assert.equal(labelScreenScale(1000,14,8),1);
+ const far=labelScreenScale(4,14,8);
+ assert.ok(far*14<=4);assert.ok(far>0);
+ assert.ok(labelScreenScale(.01,14,8)<.001); // no forced minimum
+ assert.ok(labelScreenScale(10,14,25)*25<=8.5); // multi-digit IDs fit the atom
+ assert.equal(labelScreenScale(40,14,25),labelScreenScale(250,87.5,156.25)); // 600 DPI export
+ console.log('Labels scale with projected atom diameter, cap at 14px, and preserve export scaling.');
 }
 
 // A restored GPU context recreates label materials without moving the camera.
@@ -135,7 +135,7 @@ console.log('Selection updates preserve the atom model and camera, including cle
  const label={sprite:{material:{},position:{set(){}},scale:{set:(x,y)=>scales.push([x,y])}}};
  const renderer={getView:()=>[0,0,0,0,0,0,0,1],modelGroup:{matrixWorld:{}},camera:{position:{clone:()=>({applyMatrix4:()=>({x:0,y:0,z:10})})}},
    modelToScreen:()=>({x:50,y:50}),screenToModelDistance:()=>.1,render:()=>paints++};
- const pane={viewer:renderer,preset:'xz',canvas:{clientWidth:100,clientHeight:100},atomLabels:[{atom,radius:1,label,sampling:3,fontSize:20,textWidth:12}]};
+ const pane={viewer:renderer,preset:'xz',canvas:{clientWidth:100,clientHeight:100},atomLabels:[{atom,radius:1,label,sampling:3,fontSize:14,textWidth:8}]};
  const views=Object.create(StructureViews.prototype);
  views.drawSelection(pane);assert.equal(scales.length,1);
  views.drawSelection(pane);assert.equal(scales.length,1);

@@ -1,6 +1,6 @@
 {
   "name": "structure-viewer",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "Read-only structure viewer with stable incremental selection, mass-weighted drift correction, and an optional native macOS snapshot saver for nd3.",
   "author": {
     "name": "liyang-tju"

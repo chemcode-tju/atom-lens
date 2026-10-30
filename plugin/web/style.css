@@ -23,9 +23,9 @@ input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px soli
 #drift-atoms{width:55%}#drift-state{display:block;margin-top:10px;font-size:12px;color:#375775}
 #animation-result{display:block;margin-top:10px;overflow-wrap:anywhere}
 
-/* Keep the last image stretched while one resize paint is queued. */
-.view-canvas canvas{width:100%!important;height:100%!important;display:block}
+/* Preserve the image aspect ratio while its drawing buffer catches up. */
+.view-canvas canvas{width:100%!important;height:100%!important;display:block;object-fit:contain;object-position:center;background:#fff}
 .shortcut-rectangle{z-index:4}
 .navigation button svg{display:block;width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linejoin:round;stroke-linecap:round;pointer-events:none}
 
-.resize-cover{position:absolute;inset:0;width:100%;height:100%;z-index:1;pointer-events:none;background:#fff}
+.resize-cover{position:absolute;inset:0;width:100%;height:100%;z-index:1;pointer-events:none;background:#fff;object-fit:contain;object-position:center}
