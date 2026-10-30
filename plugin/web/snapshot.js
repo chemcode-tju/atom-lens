@@ -32,14 +32,10 @@ const StructureSnapshot = (() => {
     if(maxX<0)throw Error('当前视图没有可导出的原子或晶胞');
     return {x:minX,y:minY,width:maxX-minX+1,height:maxY-minY+1};
   }
-  async function capture(views,{dpi,crop,transparent,format}) {
-    const pane=views.panes[views.active],viewer=pane.viewer;
-    const originalWidth=pane.canvas.clientWidth,originalHeight=pane.canvas.clientHeight;
-    const canvas=pane.canvas.querySelector('canvas');
-    const pixelRatio=canvas.width/originalWidth,scale=dpi/96;
-    const width=Math.round(originalWidth*scale),height=Math.round(originalHeight*scale);
-
-    const exported=views.exportPane(width/pixelRatio,height/pixelRatio);
+  async function capture(views,{dpi,crop,transparent,format},scene=views.captureScene()) {
+    const pixelRatio=scene.pixelRatio,scale=dpi/96;
+    const width=Math.round(scene.width*scale),height=Math.round(scene.height*scale);
+    const exported=views.exportPane(width/pixelRatio,height/pixelRatio,scene);
     const gl=exported.viewer.getRenderer().getContext();
     const w=gl.drawingBufferWidth,h=gl.drawingBufferHeight;
     if(!w||!h||Math.abs(w-width)>Math.ceil(pixelRatio)||Math.abs(h-height)>Math.ceil(pixelRatio))throw Error(`显卡未能创建 ${width}×${height} 的画布（实际 ${w}×${h}）`);

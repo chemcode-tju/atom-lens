@@ -36,37 +36,46 @@ def read_frames(params: dict[str, Any]) -> dict[str, Any]:
     arguments = params.get("arguments", {})
     offset = arguments.get("offset", 0)
     frame_limit = arguments.get("frameLimit", 32)
+    index_only = arguments.get("indexOnly", False)
+    if type(index_only) is not bool:
+        raise ValueError("无效索引请求")
     if type(offset) is not int or offset < 0:
         raise ValueError("无效文件偏移。")
-    if type(frame_limit) is not int or not 1 <= frame_limit <= 32:
-        raise ValueError("每次读取帧数必须为 1–32。")
+    maximum = 4096 if index_only else 32
+    if type(frame_limit) is not int or not 1 <= frame_limit <= maximum:
+        raise ValueError(f"每次读取帧数必须为 1–{maximum}。")
     blocks: list[bytes] = []
+    offsets: list[int] = []
     frame_count = 0
     with path.open("rb") as stream:
         info = os.fstat(stream.fileno())
         if not stat.S_ISREG(info.st_mode):
             raise ValueError("只能读取普通结构文件。")
         version = file_version(info)
-        if offset > info.st_size or (offset and arguments.get("version") != version):
+        if offset > info.st_size or ((offset or arguments.get("version") is not None) and arguments.get("version") != version):
             raise ValueError("加载期间文件已改变；请重新打开，避免混合不同版本的帧。")
         if vasp:
-            batch = read_vasp_batch(stream, offset, frame_limit, path.name.upper() == "XDATCAR")
+            batch = read_vasp_batch(stream, offset, frame_limit, path.name.upper() == "XDATCAR", index_only)
             if file_version(os.fstat(stream.fileno())) != version or file_version(path.stat()) != version:
                 raise ValueError("读取期间文件已改变，请重新打开。")
             return {**batch, "version": version, "totalBytes": info.st_size,
                     "eof": batch["nextOffset"] == info.st_size}
         if path.suffix.lower() == ".traj":
-            batch = read_batch(stream, offset, frame_limit)
+            batch = read_batch(stream, offset, frame_limit, index_only)
             if file_version(os.fstat(stream.fileno())) != version or file_version(path.stat()) != version:
                 raise ValueError("读取期间文件已改变，请重新打开。")
             return {**batch, "version": version}
         stream.seek(offset)
         size = 0
-        while frame_count < frame_limit and size < 262144:
+        while frame_count < frame_limit and size < (1048576 if index_only else 262144):
+            start = stream.tell()
             frame = bytearray()
+            frame_size = 0
             while True:
-                line = read_line(stream, 8388608 - len(frame))
-                frame.extend(line)
+                line = read_line(stream, 8388608 - frame_size)
+                frame_size += len(line)
+                if not index_only:
+                    frame.extend(line)
                 if line.strip() or not line:
                     break
             if not line:
@@ -78,17 +87,21 @@ def read_frames(params: dict[str, Any]) -> dict[str, Any]:
             if not 1 <= atom_count <= 100000:
                 raise ValueError("原子数必须在 1–100000 范围内。")
             for row in range(atom_count + 1):
-                line = read_line(stream, 8388608 - len(frame))
+                line = read_line(stream, 8388608 - frame_size)
                 if not line or (row > 0 and not line.strip()):
                     raise ValueError("轨迹末尾存在不完整帧；请等待写入完成后重新打开。")
-                frame.extend(line)
-            blocks.append(bytes(frame))
-            size += len(frame)
+                frame_size += len(line)
+                if not index_only:
+                    frame.extend(line)
+            offsets.append(start)
+            if not index_only:
+                blocks.append(bytes(frame))
+            size += frame_size
             frame_count += 1
         next_offset = stream.tell()
         if file_version(os.fstat(stream.fileno())) != version or file_version(path.stat()) != version:
             raise ValueError("读取期间文件已改变，请重新打开。")
     return {"supported": True, "text": b"".join(blocks).decode("utf-8"),
-            "frameCount": frame_count, "nextOffset": next_offset,
+            "frameCount": frame_count, "offsets": offsets, "nextOffset": next_offset,
             "totalBytes": info.st_size, "eof": next_offset == info.st_size,
             "version": version}

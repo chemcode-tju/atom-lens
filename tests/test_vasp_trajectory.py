@@ -73,6 +73,17 @@ class VaspTrajectoryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "不完整"):
             self.read(frameLimit=1)
 
+    def test_index_only_offsets_can_refetch_each_frame(self) -> None:
+        frames = [f"Direct configuration= {i}\n0 0 0\n0.5 0.5 {i / 100}\n".encode() for i in range(10)]
+        self.path.write_bytes(header + b"".join(frames))
+        first = self.read(frameLimit=1)
+        index = self.read(offset=first["nextOffset"], version=first["version"], indexOnly=True)
+        self.assertEqual(index["text"], "")
+        self.assertEqual(index["frameCount"], 9)
+        for number, offset in enumerate(first["offsets"] + index["offsets"]):
+            fetched = self.read(offset=offset, version=first["version"], frameLimit=1)
+            self.assertEqual(fetched["text"].encode(), header + frames[number])
+
 
 if __name__ == "__main__":
     unittest.main()

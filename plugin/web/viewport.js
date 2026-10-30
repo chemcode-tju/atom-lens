@@ -179,7 +179,7 @@ class StructureViews {
     if (!visible.includes(this.active)) this.activate(1);
     this.panes.forEach((pane, index) => { pane.element.hidden = !visible.includes(index); });
     this.activate(this.active);
-    if (this.latest) this.render(...this.latest, false);
+    if (this.scene) this.renderScene(this.scene,this.latest[2],false);
     document.getElementById("layout").value = layout;
     requestAnimationFrame(() => this.panes.forEach(pane => {
       if (!pane.element.hidden) {
@@ -297,13 +297,23 @@ class StructureViews {
       if(visibleSet.has(selected[j-1])&&visibleSet.has(selected[j]))pane.measureShapes.push(pane.viewer.addLine({start:frame.atoms[selected[j-1]],end:frame.atoms[selected[j]],color:'#075dce',linewidth:2}));
     }
   }
-  setLighting(viewer, enabled) {
+  setLighting(viewer, profile = StructureScene.lighting) {
     // Match the studio shaders bundled by server.py, on screen and in exports.
     const light = viewer.scene?.__lights?.[0];
-    if (light) { light.position.set(-0.35, 0.5, 1).normalize(); light.intensity = 1; }
+    if (light) { light.position.set(...profile.direction).normalize(); light.intensity = profile.intensity; }
     viewer.setViewStyle({style: ""});
   }
-  exportPane(width, height) {
+  captureScene() {
+    const pane=this.panes[this.active];
+    return Object.freeze({scene:this.scene,preset:pane.preset,view:pane.viewer.getView().slice(),
+      width:pane.canvas.clientWidth,height:pane.canvas.clientHeight,
+      pixelRatio:pane.canvas.querySelector('canvas').width/pane.canvas.clientWidth});
+  }
+  renderScene(scene,selected=[],reset=false) {
+    this.scene=scene;
+    this.render(scene.frame,scene.options,selected,reset);
+  }
+  exportPane(width, height, capture=this.captureScene()) {
     if (!this.exportView) {
       const element=document.createElement('div');
       element.setAttribute('aria-hidden','true');
@@ -320,10 +330,10 @@ class StructureViews {
     }
     const {pane,exporter}=this.exportView;
     pane.canvas.style.width=width+'px';pane.canvas.style.height=height+'px';pane.element.style.width=width+'px';pane.element.style.height=height+'px';
-    pane.viewer.resize();pane.preset=this.panes[this.active].preset;
-    exporter.render(this.latest[0],{...this.latest[1],labelScale:width/this.panes[this.active].canvas.clientWidth},[],false);
+    pane.viewer.resize();pane.preset=capture.preset;
+    exporter.renderScene({...capture.scene,options:{...capture.scene.options,labelScale:width/capture.width}},[],false);
     pane.viewer.setProjection(pane.preset==='perspective'?'perspective':'orthographic');
-    pane.viewer.setView(this.panes[this.active].viewer.getView());
+    pane.viewer.setView(capture.view.slice());
     pane.viewer.setBackgroundColor('#ffffff',0);pane.viewer.render();
     exporter.drawSelection(pane);
     return pane;

@@ -256,5 +256,12 @@
   "选择原子": "Select atoms",
   "框选原子": "Box select atoms",
   "点选原子；Shift + 点击可随时选择或取消": "Select atoms; Shift + click toggles selection in any mode",
-  "框选原子；Shift + 拖动可随时框选反选": "Box select atoms; Shift + drag toggles atoms in any mode"
+  "框选原子；Shift + 拖动可随时框选反选": "Box select atoms; Shift + drag toggles atoms in any mode",
+  "结构文件已关闭": "The structure file has been closed",
+  "帧尚未索引或超出范围": "Frame not yet indexed or out of range",
+  "轨迹末尾存在不完整帧": "Incomplete frame at the end of the trajectory",
+  "轨迹原子数无效": "Invalid trajectory atom count",
+  "无法识别 VASP 坐标模式": "Unrecognized VASP coordinate mode",
+  "无效索引请求": "Invalid index request",
+  "每次读取帧数必须为 1–{0}。": "Each request must contain 1–{0} frames."
 }

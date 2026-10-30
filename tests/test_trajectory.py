@@ -61,6 +61,21 @@ class TrajectoryTests(unittest.TestCase):
         result = read_frames({"arguments": {"path": str(self.path)}})
         self.assertFalse(result["supported"])
 
+    def test_index_only_and_evicted_first_frame_version(self) -> None:
+        frames = [f"1\r\n中文 {i}\r\nH {i} 0 0\r\n" for i in range(40)]
+        self.path.write_text("".join(frames))
+        first = self.read(frameLimit=1)
+        indexed = self.read(offset=first["nextOffset"], version=first["version"], indexOnly=True)
+        self.assertEqual(indexed["text"], "")
+        self.assertEqual(indexed["frameCount"], 32)
+        fetched = self.read(offset=indexed["offsets"][20], version=first["version"], frameLimit=1)
+        self.assertEqual(fetched["text"], frames[21])
+        with self.assertRaisesRegex(ValueError, "改变"):
+            self.read(offset=first["nextOffset"])
+        self.path.write_text("1\n\nO 0 0 0\n")
+        with self.assertRaisesRegex(ValueError, "改变"):
+            self.read(offset=0, version=first["version"], frameLimit=1)
+
 
 if __name__ == "__main__":
     unittest.main()

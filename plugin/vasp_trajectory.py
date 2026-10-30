@@ -9,7 +9,7 @@ def required_line(stream: BinaryIO) -> bytes:
     return line
 
 
-def read_vasp_batch(stream: BinaryIO, offset: int, frame_limit: int, trajectory: bool) -> dict[str, Any]:
+def read_vasp_batch(stream: BinaryIO, offset: int, frame_limit: int, trajectory: bool, index_only: bool = False) -> dict[str, Any]:
     """Repeat the small header in each batch so the browser can reuse its VASP parser."""
     stream.seek(0)
     header = [required_line(stream) for _ in range(7)]
@@ -30,8 +30,10 @@ def read_vasp_batch(stream: BinaryIO, offset: int, frame_limit: int, trajectory:
     else:
         stream.seek(stream.tell() - len(first_mode))
     frames: list[bytes] = []
+    offsets: list[int] = []
     size = 0
-    while len(frames) < frame_limit and size < 262144:
+    while len(offsets) < frame_limit and size < (1048576 if index_only else 262144):
+        start = stream.tell()
         mode = stream.readline()
         while mode and not mode.strip():
             mode = stream.readline()
@@ -39,21 +41,26 @@ def read_vasp_batch(stream: BinaryIO, offset: int, frame_limit: int, trajectory:
             break
         if mode.strip()[:1].lower() not in {b"d", b"c", b"k"}:
             raise ValueError("无法识别 VASP 坐标模式；XDATCAR 当前需要固定晶胞。")
-        rows = [mode]
+        rows = [] if index_only else [mode]
+        frame_size = len(mode)
         for _ in range(atom_count):
             line = required_line(stream)
             if len(line.split()) < 3:
                 raise ValueError("VASP 结构帧坐标不完整。")
-            rows.append(line)
+            frame_size += len(line)
+            if not index_only:
+                rows.append(line)
         frame = b"".join(rows)
         if not frame.endswith(b"\n"):
             frame += b"\n"
-        frames.append(frame)
-        size += len(frame)
+        offsets.append(start)
+        if not index_only:
+            frames.append(frame)
+        size += frame_size
         if not trajectory:
             # A POSCAR may contain velocities after its one structure frame.
             stream.seek(0, 2)
             break
     return {"supported": True, "format": "vasp",
             "text": (b"".join(header + frames).decode("utf-8") if frames else ""),
-            "frameCount": len(frames), "nextOffset": stream.tell()}
+            "frameCount": len(offsets), "offsets": offsets, "nextOffset": stream.tell()}

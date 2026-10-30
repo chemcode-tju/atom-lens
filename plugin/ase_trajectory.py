@@ -38,7 +38,7 @@ def array(stream: BinaryIO, data: dict[str, Any], key: str) -> list[Any]:
     return [values[i:i + shape[1]] for i in range(0, count, shape[1])]
 
 
-def read_batch(stream: BinaryIO, start: int, limit: int) -> dict[str, Any]:
+def read_batch(stream: BinaryIO, start: int, limit: int, index_only: bool = False) -> dict[str, Any]:
     """Use ULM's offset table for bounded frame access; ignore calculator payloads."""
     header = read_at(stream, 0, 48)
     if header[:8] not in {b"- of Ulm", b"AFFormat"} or header[8:24].strip() != b"ASE-Trajectory":
@@ -46,6 +46,10 @@ def read_batch(stream: BinaryIO, start: int, limit: int) -> dict[str, Any]:
     version, count, table = struct.unpack("<qqq", header[24:])
     if version not in {1, 2, 3} or count < 1 or start >= count:
         raise ValueError("ASE 轨迹版本或帧号无效")
+    if index_only:
+        # ULM already stores a frame index. Do not read any position arrays.
+        return {"supported": True, "text": "", "frameCount": 0, "offsets": [],
+                "nextOffset": count, "totalFrames": count, "eof": True, "readOnly": True}
     first = metadata(stream, table, 0)
     blocks: list[str] = []
     size = 0
@@ -78,4 +82,4 @@ def read_batch(stream: BinaryIO, start: int, limit: int) -> dict[str, Any]:
             break
     next_index = start + len(blocks)
     return {"supported": True, "text": "".join(blocks), "frameCount": len(blocks),
-            "nextOffset": next_index, "totalFrames": count, "eof": next_index == count, "readOnly": True}
+            "offsets": list(range(start, next_index)), "nextOffset": next_index, "totalFrames": count, "eof": next_index == count, "readOnly": True}

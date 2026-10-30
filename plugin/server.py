@@ -1,7 +1,7 @@
 """Dependency-free MCP server for the native Codex file-editor entrypoint."""
 
 # Configuration
-plugin_version = "0.9.4"
+plugin_version = "0.10.0"
 resource_uri = "ui://structure-viewer/editor.html"
 
 from pathlib import Path
@@ -35,8 +35,10 @@ def widget_html() -> str:
         ("/*__GEOMETRY__*/", "geometry.js"),
         ("/*__ASE_TRAJ__*/", "ase-traj.js"),
         ("/*__VASP_STREAM__*/", "vasp-stream.js"),
+        ("/*__TRAJECTORY_STORE__*/", "trajectory-store.js"),
         ("/*__SNAPSHOT__*/", "snapshot.js"),
         ("/*__SELECTION__*/", "selection.js"),
+        ("/*__SCENE__*/", "scene.js"),
         ("/*__VIEWPORT__*/", "viewport.js"),
         ("/*__CONTROLS__*/", "controls.js"),
         ("/*__APP__*/", "app.js"),
@@ -46,13 +48,8 @@ def widget_html() -> str:
         if filename == "i18n.js":
             asset = asset.replace("/*__LOCALES__*/{}", (plugin_root / "web/locales.json").read_text())
         if filename == "vendor/3Dmol-min.js":
-            from renderer_adapter import resize_safe_renderer
-            asset = resize_safe_renderer(asset)
-            # Pinned-renderer adapter: modest ambient fill and a broad highlight.
-            # The upstream imposter materials expose no lighting controls.
-            highlight = " + vec3(0.20 * pow(max(dot(norm, normalize(vLight + vec3(0.0,0.0,1.0))), 0.0), 24.0))"
-            asset = asset.replace("vec3 color = vLight*vColor;", "vec3 color = (vec3(0.30) + 0.70*vLight)*vColor" + highlight + ";")
-            asset = asset.replace("color *= light;", "color = color*(vec3(0.30) + 0.70*light)" + highlight + ";")
+            from renderer_adapter import resize_safe_renderer, studio_lighting_renderer
+            asset = studio_lighting_renderer(resize_safe_renderer(asset))
         html = html.replace(placeholder, asset.replace("</script", "<\\/script"))
     return html
 
@@ -118,7 +115,8 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
             "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
                 "token": {"type": "string"},
                 "offset": {"type": "integer", "minimum": 0},
-                "frameLimit": {"type": "integer", "minimum": 1, "maximum": 32},
+                "frameLimit": {"type": "integer", "minimum": 1, "maximum": 4096},
+                "indexOnly": {"type": "boolean"},
                 "version": {"type": "string"}}},
             "annotations": {"readOnlyHint": True, "openWorldHint": False},
             "_meta": {"ui": {"visibility": ["app"]}},

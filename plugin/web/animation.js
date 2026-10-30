@@ -62,21 +62,18 @@ $('animation-save').onclick=async()=>{
   // GIF stores centiseconds. Quantize explicitly instead of silently speeding up at >100 FPS.
   const encodedRate=format==='gif'?100/Math.max(1,Math.round(100/rate)):rate;
   const exportDoc=doc,generation=readGeneration;
-  let job;const original=frameIndex,savedSelection=selection.slice(),savedDisplay=displayState;
-  const cameras=views.panes.map(p=>p.viewer.getView());
+  let job;const settings=sceneSettings(),capture=views.captureScene();
   animationBusy=true;animationCancelled=false;$('animation-save').disabled=true;$('animation-fields').disabled=true;$('animation-close').textContent='取消导出';
   try{
     job=await mediaCall({action:'begin',kind:'animation',name,fps:encodedRate});
     let count=0,total=Math.floor((end-start)/stride)+1;
-    const reference=doc.frame(drift?.reference||0);
     for(let index=start;index<=end;index+=stride){
       if(animationCancelled)throw Error('已取消导出');
       if(doc!==exportDoc||readGeneration!==generation)throw Error('结构文件在导出期间改变，请重新导出');
-      if(drift&&StructureSelection.remap(reference,doc.frame(index),drift.indices).length!==drift.indices.length)throw Error(`第 ${index+1} 帧无法对应质心校正原子`);
-      // Do not run go(): exports must not remap or mutate interactive selection/style state.
-      frameIndex=index;render(false,true);
-      views.panes.forEach((p,i)=>p.viewer.setView(cameras[i]));
-      const image=await StructureSnapshot.capture(views,{dpi:96,crop:false,transparent:false,format:'png'});
+      const record=await exportDoc.get(index);
+      if(doc!==exportDoc||readGeneration!==generation)throw Error('结构文件在导出期间改变，请重新导出');
+      const scene=StructureScene.build(record.frame,settings);
+      const image=await StructureSnapshot.capture(views,{dpi:96,crop:false,transparent:false,format:'png'},{...capture,scene});
       await uploadMedia(job.id,image.bytes,()=>animationCancelled);
       $('animation-result').textContent=`渲染 ${++count} / ${total}`;
       await new Promise(resolve=>setTimeout(resolve,0));
@@ -94,7 +91,6 @@ $('animation-save').onclick=async()=>{
   }catch(error){$('animation-result').textContent=error.message;}
   finally{
     if(job)await mediaCall({action:'cancel',id:job.id}).catch(()=>{});
-    if(doc===exportDoc){frameIndex=original;selection=savedSelection;displayState=savedDisplay;render();views.panes.forEach((p,i)=>p.viewer.setView(cameras[i]));}
     animationBusy=false;$('animation-save').disabled=false;$('animation-fields').disabled=false;$('animation-close').disabled=false;$('animation-close').textContent='关闭';
   }
 };
