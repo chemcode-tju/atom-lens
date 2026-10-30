@@ -252,5 +252,9 @@
   "VASP 元素计数无效；需要含元素名的 VASP 5/6 文件。": "Invalid VASP element counts; use a VASP 5/6 file with element names.",
   "VASP 元素计数无效。": "Invalid VASP element counts.",
   "无法识别 VASP 坐标模式；XDATCAR 当前需要固定晶胞。": "Unrecognized VASP coordinate mode; XDATCAR currently requires a fixed cell.",
-  "VASP 结构帧坐标不完整。": "Incomplete VASP frame coordinates."
+  "VASP 结构帧坐标不完整。": "Incomplete VASP frame coordinates.",
+  "选择原子": "Select atoms",
+  "框选原子": "Box select atoms",
+  "点选原子；Shift + 点击可随时选择或取消": "Select atoms; Shift + click toggles selection in any mode",
+  "框选原子；Shift + 拖动可随时框选反选": "Box select atoms; Shift + drag toggles atoms in any mode"
 }

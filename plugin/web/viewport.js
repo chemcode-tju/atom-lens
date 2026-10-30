@@ -21,10 +21,10 @@ class StructureViews {
   createPane(preset, index) {
     const element = document.createElement("section");
     element.className = "viewport";
-    element.innerHTML = '<button class="view-title" type="button"></button><div class="view-canvas"></div><div class="pointer-layer"><div class="selection-rectangle" hidden></div></div><svg class="axis-gizmo" viewBox="0 0 78 78" aria-label="坐标轴"></svg>';
+    element.innerHTML = '<button class="view-title" type="button"></button><div class="view-canvas"></div><div class="pointer-layer"><div class="selection-rectangle" hidden></div></div><div class="selection-rectangle shortcut-rectangle" hidden></div><svg class="axis-gizmo" viewBox="0 0 78 78" aria-label="坐标轴"></svg>';
     this.container.append(element);
     const canvas = element.querySelector(".view-canvas");
-    const viewer = $3Dmol.createViewer(canvas, {canvas: document.createElement("canvas"), row:0, col:0, rows:1, cols:1, backgroundColor: "#ffffff", antialias: true, orthographic: true, disableFog: true});
+    const viewer = $3Dmol.createViewer(canvas, {canvas: document.createElement("canvas"), row:0, col:0, rows:1, cols:1, backgroundColor: "#ffffff", antialias: true, orthographic: true, disableFog: true, manualResize: true});
     const pane = {element, canvas, viewer, preset, ready: false};
     this.panes.push(pane);
     element.querySelector(".view-title").textContent = this.title(preset);
@@ -33,7 +33,10 @@ class StructureViews {
     element.addEventListener("pointerdown", () => this.activate(index), true);
     element.addEventListener("mousedown", () => this.activate(index), true);
     viewer.setViewChangeCallback(() => { this.drawAxes(pane); this.drawSelection(pane); });
-    new ResizeObserver(() => { if (!element.hidden) { viewer.resize(); viewer.render(); } }).observe(canvas);
+    // Own resize scheduling; the pinned renderer's automatic listeners are
+    // disabled with manualResize. resize() already paints the existing scene.
+    new ResizeObserver(() => this.scheduleResize(pane)).observe(canvas);
+    this.bindShiftSelection(pane);
     let rightPointer=null;
     element.addEventListener('contextmenu',event=>event.preventDefault());
     element.addEventListener('mousedown',event=>{if(event.button===2){event.preventDefault();event.stopImmediatePropagation();}},true);
@@ -78,6 +81,60 @@ class StructureViews {
     };
     layer.onpointercancel=()=>{layer.querySelector('.selection-rectangle').hidden=true;pointer=null;};
     layer.addEventListener("wheel", event => { event.preventDefault(); viewer.zoom(Math.exp(-event.deltaY * 0.001)); }, {passive: false});
+  }
+  scheduleResize(pane) {
+    if(pane.resizeTicket)return;
+    pane.resizeTicket=requestAnimationFrame(()=>{
+      pane.resizeTicket=null;
+      const width=pane.canvas.clientWidth,height=pane.canvas.clientHeight;
+      const size=`${width}:${height}:${globalThis.devicePixelRatio||1}`;
+      if(pane.element.hidden||width<=0||height<=0||pane.lastSize===size)return;
+      pane.lastSize=size;
+      pane.viewer.resize();
+    });
+  }
+  bindShiftSelection(pane) {
+    const {element,canvas,viewer}=pane;
+    const rectangle=element.querySelector('.shortcut-rectangle');
+    let gesture=null;
+    const stop=event=>{event.preventDefault();event.stopImmediatePropagation();};
+    const finish=()=>{rectangle.hidden=true;gesture=null;};
+    // Capture before either 3Dmol or the active navigation overlay handles input.
+    element.addEventListener('pointerdown',event=>{
+      if(event.button!==0||!event.shiftKey||event.target.closest('button'))return;
+      gesture={id:event.pointerId,x:event.clientX,y:event.clientY,dragged:false};
+      element.setPointerCapture(event.pointerId);stop(event);
+    },true);
+    element.addEventListener('pointermove',event=>{
+      if(!gesture||gesture.id!==event.pointerId)return;
+      if(Math.hypot(event.clientX-gesture.x,event.clientY-gesture.y)>4)gesture.dragged=true;
+      if(gesture.dragged){
+        const rect=canvas.getBoundingClientRect();rectangle.hidden=false;
+        rectangle.style.cssText=`left:${Math.min(gesture.x,event.clientX)-rect.left}px;top:${Math.min(gesture.y,event.clientY)-rect.top}px;width:${Math.abs(event.clientX-gesture.x)}px;height:${Math.abs(event.clientY-gesture.y)}px`;
+      }
+      stop(event);
+    },true);
+    element.addEventListener('pointerup',event=>{
+      if(!gesture||gesture.id!==event.pointerId)return;
+      stop(event);
+      const current=gesture;finish();
+      if(current.dragged){
+        const atoms=this.latest?.[0].atoms||[];
+        const points=this.visibleIndices.map(index=>({...viewer.modelToScreen(atoms[index]),index}));
+        this.onBox(StructureSelection.inRectangle(points,{x:current.x+scrollX,y:current.y+scrollY},{x:event.clientX+scrollX,y:event.clientY+scrollY}),true);
+      }else{
+        const rect=canvas.getBoundingClientRect();
+        if(!rect.width||!rect.height)return;
+        const hits=viewer.targetedObjects(2*(event.clientX-rect.left)/rect.width-1,1-2*(event.clientY-rect.top)/rect.height,{});
+        if(hits.length){const index=this.visibleIndices[hits[0].clickable.index];if(index!==undefined)this.onAtom(index,true);}
+      }
+    },true);
+    for(const name of ['pointercancel','lostpointercapture'])element.addEventListener(name,event=>{
+      if(gesture?.id===event.pointerId)finish();
+    },true);
+    for(const name of ['mousedown','mouseup','click'])element.addEventListener(name,event=>{
+      if((gesture||event.shiftKey)&&!event.target.closest('button'))stop(event);
+    },true);
   }
   title(preset) { return {xy: "Top · XY", xz: "Front · XZ", yz: "Left · YZ", perspective: "Perspective"}[preset]; }
   activate(index) {
@@ -148,6 +205,7 @@ class StructureViews {
     if(pane.drawingSelection)return;
     const viewer=pane.viewer,view=viewer.getView(),key=JSON.stringify([view,pane.preset,pane.canvas.clientWidth,pane.canvas.clientHeight]);
     if(pane.markerView===key)return;
+    if(!pane.markers?.length&&!pane.atomLabels?.length){pane.markerView=key;return;}
     pane.drawingSelection=true;
     try {
       for(const shape of [...(pane.markerShapes||[])].reverse())viewer.removeShape(shape);
@@ -216,7 +274,7 @@ class StructureViews {
       document.body.append(element);
       const canvas=element.querySelector('.export-canvas');
       canvas.style.width=width+'px';canvas.style.height=height+'px';
-      const viewer=$3Dmol.createViewer(canvas,{canvas:document.createElement('canvas'),row:0,col:0,rows:1,cols:1,backgroundColor:'#ffffff',backgroundAlpha:0,antialias:true,orthographic:true,disableFog:true,nomouse:true});
+      const viewer=$3Dmol.createViewer(canvas,{canvas:document.createElement('canvas'),row:0,col:0,rows:1,cols:1,backgroundColor:'#ffffff',backgroundAlpha:0,antialias:true,orthographic:true,disableFog:true,nomouse:true,manualResize:true});
       const pane={element,canvas,viewer,preset:'xz',ready:false};
       const exporter=Object.create(StructureViews.prototype);
       Object.assign(exporter,{panes:[pane],onAtom:()=>{},active:0});

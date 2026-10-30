@@ -1,7 +1,7 @@
 """Dependency-free MCP server for the native Codex file-editor entrypoint."""
 
 # Configuration
-plugin_version = "0.9.1"
+plugin_version = "0.9.2"
 resource_uri = "ui://structure-viewer/editor.html"
 
 from pathlib import Path
@@ -46,6 +46,12 @@ def widget_html() -> str:
         if filename == "i18n.js":
             asset = asset.replace("/*__LOCALES__*/{}", (plugin_root / "web/locales.json").read_text())
         if filename == "vendor/3Dmol-min.js":
+            # Our viewport batches resize notifications into one paint. Keep
+            # upstream defaults for viewers that do not opt into manualResize.
+            asset = asset.replace('window.addEventListener("resize",this.resize.bind(this))',
+                                  'this.config.manualResize||window.addEventListener("resize",this.resize.bind(this))')
+            asset = asset.replace('void 0!==window.ResizeObserver&&(this.divwatcher=',
+                                  '!this.config.manualResize&&void 0!==window.ResizeObserver&&(this.divwatcher=')
             # Pinned-renderer adapter: modest ambient fill and a broad highlight.
             # The upstream imposter materials expose no lighting controls.
             highlight = " + vec3(0.20 * pow(max(dot(norm, normalize(vLight + vec3(0.0,0.0,1.0))), 0.0), 24.0))"
