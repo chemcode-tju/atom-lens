@@ -5,7 +5,7 @@ let nextId = 1, hostName = "当前主机", fileRef, doc, frameIndex = 0, frameDa
 let selection = [], timer = null, loading = false, readGeneration = 0;
 let displayState = new StructureSelection.DisplayState();
 let streamComplete = true, binaryTrajectory = false, pickedFile = false;
-let drift = null, paintTicket = 0, snapshotTicket = 0, snapshotData = null;
+let drift = null, paintTicket = 0, selectionTicket = 0, snapshotTicket = 0, snapshotData = null;
 let snapshotHost = null, activeRecord = null;
 let navigationTarget = null, navigationTask = null;
 let playbackGeneration = 0;
@@ -94,14 +94,22 @@ function updateSelection() {
   $("atom-list").textContent=selection.length===1?(()=>{const i=selection[0],a=atoms[i];return `${a.elem} #${i+1}  (${a.x.toFixed(4)}, ${a.y.toFixed(4)}, ${a.z.toFixed(4)}) Å`;})():selection.length<=4?selection.map(i=>`${atoms[i].elem} #${i+1}`).join(' → '):'';
   $("clear-selection").disabled=!selection.length;
   $("selection-count").textContent=`选中原子 · ${selection.length}`;
-  $("apply-display").disabled=$("reset-selected-style").disabled=!selection.length;
+  $("reset-selected-style").disabled = !count;
+  for (const [field, control] of selectionControls) {
+    control.disabled = !count;
+    if (!$("display-dialog").open) continue;
+    const valueAt = i => displayState.overrides.get(i)?.[field];
+    const first = valueAt(selection[0]);
+    const mixed = selection.some(i => valueAt(i) !== first);
+    control.value = mixed ? "mixed" : first == null ? "" : field === "visible" ? (first ? "show" : "hide") : first;
+  }
 }
 function selectionChanged() {
   if (selection.length && $("atom-panel").hidden) $("trajectory-tools").open = true;
   stop();
   updateSelection();
-  const ticket=++paintTicket;
-  afterPaint(()=>{if(ticket===paintTicket)views?.updateSelection(selection);});
+  const ticket=++selectionTicket;
+  afterPaint(()=>{if(ticket===selectionTicket)views?.updateSelection(selection);});
 }
 function chooseAtom(index, shortcut = false) {
   if(!shortcut&&views?.mode!=="select")return;
@@ -125,13 +133,21 @@ function populateElements() {
   updateSelection();
 }
 $("clear-selection").onclick=()=>{selection=[];selectionChanged();};
-$("display-settings").onclick=()=>{stop();populateElements();openPanel($("display-dialog"));};
+$("display-settings").onclick=()=>{stop();openPanel($("display-dialog"));populateElements();};
 $("display-close").onclick=()=>$("display-dialog").close();
 $("show-elements").onclick=()=>{displayState.hiddenElements.clear();populateElements();scheduleRender();};
-$("apply-display").onclick=()=>{
-  const style=$("selection-style").value,palette=$("selection-palette").value,visible=$("selection-visible").value;
-  displayState.apply(frameData,selection,{...(style?{style}:{}),...(palette?{palette,color:palette==='custom'?$("selection-color").value:null}:{}),...(visible?{visible:visible==='show'}:{})});scheduleRender();
-};
+const selectionControls = [
+  ["style", $("selection-style")], ["palette", $("selection-palette")], ["visible", $("selection-visible")]
+];
+for (const [field, control] of selectionControls) {
+  control.disabled = true;
+  control.onchange = () => {
+    if (!frameData || !selection.length) return;
+    const value = control.value === "" ? null : field === "visible" ? control.value === "show" : control.value;
+    displayState.apply(frameData, selection, {[field]: value});
+    scheduleRender();
+  };
+}
 $("reset-selected-style").onclick=()=>{displayState.reset(frameData,selection);scheduleRender();};
 $("reset-display").onclick=()=>{resetDisplayState();populateElements();scheduleRender();};
 async function go(index) {
@@ -342,7 +358,7 @@ $("drift-apply").onclick=async()=>{
   }catch(error){$("drift-error").textContent=error.message;}finally{$("drift-apply").disabled=false;}
 };
 $("source-toggle").onclick = () => { stop(); $("source-panel").hidden = !$("source-panel").hidden; if(doc)$("source").value=activeRecord.text; };
-request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.11.2" }, appCapabilities: {} })
+request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.11.3" }, appCapabilities: {} })
   .then(() => { send("ui/notifications/initialized", {}); status("已连接，等待文件…"); })
   .catch(error => status(`连接失败：${error.message}`, true));
 

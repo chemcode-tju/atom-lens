@@ -206,3 +206,12 @@ body { font-size: calc(var(--reading-size, 14px) - 1px); }
 #path-dialog textarea { width:100%; box-sizing:border-box; }
 
 body:not(.has-structure) #animation-export {display:none;}
+
+#display-dialog { width:min(278px,calc(100vw - 16px)); max-height:calc(100dvh - 80px); padding:10px 12px; border-radius:12px; }
+#display-dialog h2 { font-size:1.1em; margin:0 0 4px; padding:2px 0 5px; }
+#display-dialog fieldset { margin:6px 0; padding:4px 8px 6px; }
+#display-dialog fieldset label { margin:3px 0; gap:6px; }
+#display-dialog #element-list { gap:2px 8px; }
+#display-dialog button,#display-dialog select { min-height:25px; font-size:inherit; padding-block:2px; }
+#display-dialog fieldset button { margin:3px 0 0; }
+#display-dialog .dialog-actions { margin-top:6px; gap:5px; }

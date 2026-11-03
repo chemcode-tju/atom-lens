@@ -271,6 +271,8 @@
   "返回研究空间": "Back to workspace",
   "登录已过期，请返回 Chem Code 重新登录。": "Session expired. Sign in to Chem Code again.",
   "文件格式与导入选项": "File format and import options",
+  "多种值": "Mixed",
+  "跟随全局": "Use global setting",
   "界面设置": "Interface settings",
   "查看选项": "View options",
   "自动识别": "Detect automatically",

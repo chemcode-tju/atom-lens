@@ -4,7 +4,7 @@ global.StructureGeometry=require('../plugin/web/geometry.js');
 const Scene=require('../plugin/web/scene.js');
 const reference={atoms:[{elem:'H',id:1,x:1,y:0,z:0},{elem:'O',id:2,x:5,y:0,z:0}],cell:[[10,0,0],[0,10,0],[0,0,10]],pbc:[true,true,true]};
 const next={...reference,atoms:[{...reference.atoms[1],x:16},{...reference.atoms[0],x:3}]};
-const display=new StructureSelection.DisplayState();display.apply(reference,[0],{style:'stick',color:'#ff0000',palette:'custom'});
+const display=new StructureSelection.DisplayState();display.apply(reference,[0],{style:'stick',palette:'rasmol'});
 const settings=Scene.settings(reference,{display,wrap:true,scale:1,drift:{referenceFrame:reference,indices:[0]}});
 display.apply(reference,[0],{style:'sphere'});display.hiddenElements.add('H');
 const preview=Scene.build(reference,settings),exported=Scene.build(next,settings);

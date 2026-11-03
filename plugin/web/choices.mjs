@@ -111,6 +111,9 @@ function commit(row) {
 
 for (const name of ["pointerdown","mousedown"]) document.addEventListener(name, event => {
   if (event.button !== 0) return;
+  // Keep focus on the select while clicking an option in a nonmodal dialog.
+  // Otherwise the dialog takes focus and removes the list before click commits.
+  if (current && menu.contains(event.target)) { event.preventDefault(); return; }
   const select = selectFor(event.target);
   if (select) { event.preventDefault(); select.focus({preventScroll:true}); }
   else if (current && !menu.contains(event.target)) close();

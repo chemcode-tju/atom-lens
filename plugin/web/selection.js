@@ -42,11 +42,26 @@
   }
   class DisplayState {
     constructor(){this.hiddenElements=new Set();this.overrides=new Map();}
-    apply(frame,indices,patch){for(const i of indices)this.overrides.set(i,{...this.overrides.get(i),...patch});}
+    apply(frame,indices,patch){
+      for(const index of indices) {
+        const rule={...this.overrides.get(index),...patch};
+        for(const key of Object.keys(rule))if(rule[key]==null)delete rule[key];
+        if(Object.keys(rule).length)this.overrides.set(index,rule);
+        else this.overrides.delete(index);
+      }
+    }
     reset(frame,indices){for(const i of indices)this.overrides.delete(i);}
     transition(a,b){
       const next=new Map();
-      for(const [i,rule] of this.overrides){const mapped=remap(a,b,[i]);if(mapped.length)next.set(mapped[0],rule);}
+      if(!this.overrides.size)return;
+      const indices=[...this.overrides.keys()];
+      if(validIds(a)&&validIds(b)){
+        const byId=new Map(b.atoms.map((atom,i)=>[atom.id,i]));
+        for(const i of indices){
+          const target=byId.get(a.atoms[i]?.id);
+          if(target!==undefined)next.set(target,this.overrides.get(i));
+        }
+      }else if(compatible(a,b))return;
       this.overrides=next;
     }
     resolve(atom,index,defaults){

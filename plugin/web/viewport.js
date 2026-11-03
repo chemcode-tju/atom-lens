@@ -371,11 +371,11 @@ class StructureViews {
         const model = viewer.addModel(xyz, "xyz", {assignBonds: rules.some(r=>r.visible&&r.style!=="sphere")});
         model.selectedAtoms({}).forEach((atom,index)=>{atom.index=index;});
         viewer.setStyle({},{});
-        const groups=new Map();
+        const groups=new Map(), palettes=new Map();
         this.visibleIndices.forEach((originalIndex,index)=>{
           const atom=frame.atoms[originalIndex],rule=rules[originalIndex];
-          const palette=StructureAppearance.palette(rule.palette,$3Dmol.elementColors);
-          const color=rule.palette==='custom'?rule.color:(palette[atom.elem]??0xff1493);
+          if(!palettes.has(rule.palette))palettes.set(rule.palette,StructureAppearance.palette(rule.palette,$3Dmol.elementColors));
+          const color=palettes.get(rule.palette)[atom.elem]??0xff1493;
           const radius=StructureAppearance.radius(atom.elem)*options.scale;
           const style=rule.style==='sphere'?{sphere:{radius,color}}:rule.style==='stick'?{stick:{radius:.16,color}}:{sphere:{radius:radius*.45,color},stick:{radius:.10,color}};
           const key=JSON.stringify(style);if(!groups.has(key))groups.set(key,{style,indices:[]});groups.get(key).indices.push(index);

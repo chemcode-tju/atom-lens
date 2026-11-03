@@ -67,10 +67,10 @@
   <h2>显示设置</h2>
   <fieldset><legend>元素显隐</legend><div id="element-list"></div><button id="show-elements">全部显示</button></fieldset>
   <fieldset><legend id="selection-count">选中原子</legend>
-    <label>显示方式 <select id="selection-style"><option value="">保持原样</option><option value="sphere">原子球</option><option value="ballstick">球棍</option><option value="stick">线棒</option></select></label>
-    <label>配色 <select id="selection-palette"><option value="">保持原样</option><option value="jmol">Jmol</option><option value="rasmol">RasMol / CPK</option><option value="vesta">VESTA</option><option value="custom">自定义</option></select><input id="selection-color" type="color" value="#38a5dd" aria-label="选中原子颜色"></label>
-    <label>显隐 <select id="selection-visible"><option value="">保持原样</option><option value="show">显示</option><option value="hide">隐藏</option></select></label>
-    <button id="apply-display">应用到选中原子</button><button id="reset-selected-style">恢复选中原子默认</button>
+    <label>显示方式 <select id="selection-style"><option value="">跟随全局</option><option value="mixed" hidden disabled>多种值</option><option value="sphere">原子球</option><option value="ballstick">球棍</option><option value="stick">线棒</option></select></label>
+    <label>配色 <select id="selection-palette"><option value="">跟随全局</option><option value="mixed" hidden disabled>多种值</option><option value="jmol">Jmol</option><option value="rasmol">RasMol / CPK</option><option value="vesta">VESTA</option></select></label>
+    <label>显隐 <select id="selection-visible"><option value="">跟随全局</option><option value="mixed" hidden disabled>多种值</option><option value="show">显示</option><option value="hide">隐藏</option></select></label>
+    <button id="reset-selected-style">恢复选中原子默认</button>
   </fieldset>
   <div class="dialog-actions"><button id="reset-display">恢复所有显示设置</button><button id="display-close">关闭</button></div>
 </dialog>
