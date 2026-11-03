@@ -13,7 +13,7 @@
     <div class="viewer-option-body">
       <div class="file-actions"><button id="display-settings"><svg class="icon" aria-hidden="true"><use href="#i-appearance"/></svg>显示设置</button><button id="drift-settings" disabled><svg class="icon" aria-hidden="true"><use href="#i-drift"/></svg>质心漂移校正</button><button id="snapshot"><svg class="icon" aria-hidden="true"><use href="#i-snapshot"/></svg>快照</button><button id="animation-export"><svg class="icon" aria-hidden="true"><use href="#i-timeline"/></svg>导出动画</button><button id="source-toggle"><svg class="icon" aria-hidden="true"><use href="#i-software"/></svg>源码</button></div>
       <div class="toolbar">
-    <label>格式 <select id="import-format"><option value="auto">自动识别</option><option value="extxyz">XYZ / extxyz</option><option value="vasp">POSCAR / CONTCAR</option><option value="vasp-xdatcar">XDATCAR</option><option value="lammps-dump-text">LAMMPS dump（文本）</option><option value="lammps-data">LAMMPS data</option><option value="gromacs">GROMACS GRO</option><option value="proteindatabank">PDB</option><option value="cif">CIF</option></select></label>
+    <label>格式 <select id="import-format"><option value="auto">自动识别</option><option value="extxyz">XYZ / extxyz</option><option value="vasp">POSCAR / CONTCAR</option><option value="vasp-xdatcar">XDATCAR</option><option value="lammps-dump-text">LAMMPS dump（文本）</option><option value="lammps-data">LAMMPS data</option><option value="gromacs">GROMACS GRO</option><option value="trr">GROMACS TRR</option><option value="proteindatabank">PDB</option><option value="cif">CIF</option></select></label>
     <select id="style" aria-label="显示方式"><option value="sphere">原子球</option><option value="ballstick">球棍</option><option value="stick">线棒</option></select>
     <select id="palette" aria-label="原子配色"><option value="jmol">Jmol</option><option value="rasmol">RasMol / CPK</option><option value="vesta">VESTA</option></select>
     <select id="radius-scale" aria-label="原子半径比例" title="原子半径比例"><option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.25">125%</option></select>
@@ -83,7 +83,7 @@
   <label class="check-row"><input id="playback-loop" type="checkbox" checked>循环播放</label></fieldset>
   <div class="dialog-actions"><button value="cancel">取消</button><button id="playback-apply" value="default">确定</button></div></form>
 </dialog>
-<dialog id="path-dialog"><h2>打开结构文件</h2><label for="structure-path" id="path-host">当前主机上的完整路径</label><input id="structure-path" type="text" placeholder="/完整路径/POSCAR" autocomplete="off" spellcheck="false"><label for="companion-paths">LAMMPS 配套路径（每行一个，可留空）</label><textarea id="companion-paths" rows="2"></textarea><output id="path-error" role="alert"></output><div class="dialog-actions"><button id="path-close">关闭</button><button id="path-load">打开</button></div></dialog>
+<dialog id="path-dialog"><h2>打开结构文件</h2><label for="structure-path" id="path-host">当前主机上的完整路径</label><input id="structure-path" type="text" placeholder="/完整路径/POSCAR" autocomplete="off" spellcheck="false"><label for="companion-paths">配套文件路径（每行一个，可留空）</label><textarea id="companion-paths" rows="2"></textarea><output id="path-error" role="alert"></output><div class="dialog-actions"><button id="path-close">关闭</button><button id="path-load">打开</button></div></dialog>
 <dialog id="snapshot-dialog">
   <h2>保存快照</h2>
   <div class="snapshot-preview"><img id="snapshot-preview" alt="当前构型快照" hidden></div>
@@ -106,5 +106,5 @@
 <label id="animation-directory-row">目录<input id="animation-directory" placeholder="结构所在目录"></label></fieldset>
 <output id="animation-result"></output><div class="dialog-actions"><button id="animation-close">关闭</button><button id="animation-save">导出并保存</button></div></dialog>
 <script>/*__I18N__*/</script><script>/*__3DMOL__*/</script><script>/*__PARSER__*/</script><script>/*__APPEARANCE__*/</script><script>/*__GEOMETRY__*/</script><script>/*__ASE_TRAJ__*/
-/*__VASP_STREAM__*/</script><script>/*__TRAJECTORY_STORE__*/</script><script>/*__SNAPSHOT__*/</script><script>/*__SELECTION__*/</script><script>/*__SCENE__*/</script><script>/*__VIEWPORT__*/</script><script>/*__CONTROLS__*/</script><script>/*__LAMMPS__*/</script><script>/*__MD__*/</script><script>/*__IMPORT__*/</script><script>/*__HOST_FILES__*/</script><script>/*__APP__*/</script><script>/*__ANIMATION__*/</script>
+/*__VASP_STREAM__*/</script><script>/*__TRAJECTORY_STORE__*/</script><script>/*__SNAPSHOT__*/</script><script>/*__SELECTION__*/</script><script>/*__SCENE__*/</script><script>/*__VIEWPORT__*/</script><script>/*__CONTROLS__*/</script><script>/*__LAMMPS__*/</script><script>/*__MD__*/</script><script>/*__PAIRED__*/</script><script>/*__IMPORT__*/</script><script>/*__HOST_FILES__*/</script><script>/*__APP__*/</script><script>/*__ANIMATION__*/</script>
 <script type="module">/*__CHOICES_JS__*/</script></body></html>

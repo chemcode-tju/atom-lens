@@ -1,7 +1,7 @@
 """Dependency-free MCP server for the native Codex file-editor entrypoint."""
 
 # Configuration
-plugin_version = "0.11.3"
+plugin_version = "0.12.0"
 resource_uri = "ui://structure-viewer/editor.html"
 
 from pathlib import Path
@@ -37,6 +37,7 @@ def widget_html() -> str:
         ("<!--__ICON_SPRITE__-->", "ui-icons.svg"),
         ("/*__LAMMPS__*/", "lammps-metadata.js"),
         ("/*__MD__*/", "md-stream.js"),
+        ("/*__PAIRED__*/", "paired.js"),
         ("/*__IMPORT__*/", "import.js"),
         ("/*__HOST_FILES__*/", "host-files.js"),
         ("/*__STYLE__*/", "style.css"),
@@ -81,7 +82,7 @@ def tool_descriptor() -> dict[str, Any]:
         "_meta": {
             "ui": {"resourceUri": resource_uri, "visibility": ["app"]},
             "openai/ui": {"entrypoints": [{"type": "file", "extensions": [
-                ".extxyz", ".xyz", ".traj", ".vasp", ".gro", ".lammpstrj", ".dump", ".data", ".lmp", ".lammps", ".pdb", ".cif", ".svtraj"]}]},
+                ".extxyz", ".xyz", ".traj", ".vasp", ".gro", ".lammpstrj", ".dump", ".data", ".lmp", ".lammps", ".pdb", ".cif", ".svtraj", ".trr"]}]},
         },
     }
 
@@ -110,7 +111,7 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
             "_meta": {"ui": {"visibility": ["app"]}},
         }, {
             "name": "open_structure_path", "title": "Structure Viewer",
-            "description": "Open a structure on this host using its absolute path, including bare POSCAR/CONTCAR/XDATCAR, GRO, LAMMPS dumps/data, CIF and PDB. For LAMMPS, pass optional companion data, input or log paths with the primary trajectory. Omit path to open the structure browser.",
+            "description": "Open a structure on this host using its absolute path, including bare POSCAR/CONTCAR/XDATCAR, GRO, LAMMPS dumps/data, CIF and PDB. Pass matching companions for CP2K XYZ + CELL, GRO + TOP, TRR + TPR, or LAMMPS dump + data/input/log. Omit path to open the structure browser.",
             "inputSchema": {"type": "object", "additionalProperties": False,
                             "properties": {"path": {"type": "string"}, "companions": {"type":"array","items":{"type":"string"},"maxItems":31}}},
             "annotations": {"readOnlyHint": True, "openWorldHint": False},
@@ -130,10 +131,10 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
         }, {
             "name": "structure_import", "title": "Read scientific structure",
             "inputSchema": {"type":"object","additionalProperties":False,"required":["action"],"properties":{
-                "action":{"enum":["stat","range","frames","convert"]},"token":{"type":"string"},
+                "action":{"enum":["stat","range","frames","convert","topology"]},"token":{"type":"string"},
                 "version":{"type":"string"},"offset":{"type":"integer","minimum":0},"length":{"type":"integer","minimum":0,"maximum":1048576},
                 "indexOnly":{"type":"boolean"},"format":{"type":"string"},"text":{"type":"string"},
-                "elements":{"type":"array","items":{"type":"string"}},"units":{"type":"string"},"atomStyle":{"type":"string"}}},
+                "elements":{"type":"array","items":{"type":"string"}},"units":{"type":"string"},"atomStyle":{"type":"string"},"files":{"type":"array","maxItems":32,"items":{"type":"object","required":["name","data"],"properties":{"name":{"type":"string"},"data":{"type":"string"}}}}}},
             "annotations":{"readOnlyHint":True,"openWorldHint":False},"_meta":{"ui":{"visibility":["app"]}},
         }, {
             "name": "read_structure_source", "title": "Read selected VASP structure",

@@ -12,6 +12,15 @@ const StructureHostFiles = (() => {
     const read = args => call({...binding,version:meta.version,...args});
     const file = {
       name:ref.name, size:meta.size,
+      topology(){return read({action:"topology"});},
+      async xyzSource(){
+        const batch=async args=>{
+          const reply=await request('tools/call',{name:'read_trajectory_frames',arguments:{...binding,version:meta.version,...args}});
+          if(reply.isError)throw Error(reply.content?.[0]?.text || 'XYZ read failed');
+          return reply.structuredContent;
+        };
+        return new StructureTrajectory.HostSource(batch,await batch({offset:0,frameLimit:1}));
+      },
       convert(options){return read({action:"convert",...options});},
       slice(start=0,end=meta.size) {
         end=Math.min(end,meta.size);

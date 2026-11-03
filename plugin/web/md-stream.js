@@ -16,15 +16,19 @@
     const header=`Lattice="${cell.flat().join(' ')}" Properties=${properties} pbc="${pbc.map(v=>v?'T':'F').join(' ')}"`;
     return `${atoms.length}\n${header}\n`+atoms.map(a=>`${a.elem} ${a.position.join(' ')}${withIds?' '+a.id:''}${withMass?' '+a.mass:''}`).join('\n')+'\n';
   }
-  function parseGro(text) {
+  function parseGro(text, topology) {
     const lines=text.replace(/\r/g,'').trimEnd().split('\n'), n=count(lines[1]);
     if(lines.length!==n+3)throw Error('GRO 帧不完整或原子数与行数不一致');
-    const atoms=lines.slice(2,n+2).map(line=>{
+    if(topology && n!==topology.length)throw Error("GRO/TOP atom count mismatch");
+    const atoms=lines.slice(2,n+2).map((line,i)=>{
       // GRO precision is variable: consecutive decimal points determine field width.
       const decimals=[...line.slice(20).matchAll(/\./g)].map(match=>match.index);
       if(decimals.length<3)throw Error('GRO 坐标列不完整');
       const width=decimals[1]-decimals[0];if(width<5||decimals[2]-decimals[1]!==width)throw Error('GRO 坐标精度/列宽不一致');
-      return {elem:groElement(line.slice(10,15).trim()),position:[0,1,2].map(i=>number(line.slice(20+i*width,20+(i+1)*width))*10)};
+      const atomName=line.slice(10,15).trim(), expected=topology?.[i];
+      if(expected && (expected.name.slice(0,5)!==atomName || expected.residue.slice(0,5)!==line.slice(5,10).trim()))
+        throw Error("GRO/TOP atom order or name mismatch at atom "+(i+1));
+      return {elem:expected?expected.symbol:groElement(atomName),position:[0,1,2].map(i=>number(line.slice(20+i*width,20+(i+1)*width))*10)};
     });
     const box=lines[n+2].trim().split(/\s+/).map(number);
     if(![3,9].includes(box.length))throw Error('GRO 晶胞必须包含 3 或 9 个数值');

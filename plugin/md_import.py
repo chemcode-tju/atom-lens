@@ -102,6 +102,9 @@ def convert_static(args: dict[str, Any]) -> dict[str, str]:
 def import_selected(params: dict[str, Any]) -> dict[str, Any]:
     args = params["arguments"]
     action = args["action"]
+    if action == "topology":
+        from gmx_topology import topology_request
+        return topology_request(params)
     if action == "convert" and "text" in args:
         return convert_static(args)
     path = params.get("_meta", {}).get("openai/resource", {}).get("path")

@@ -2,6 +2,16 @@
 
 在 Codex 侧面板查看原子结构与轨迹。MCP Apps 文件入口，无需 skill 或独立 HTTP 服务。0.5.0 起结构文件始终只读；快照另存为图片。
 
+## 0.12.0 配套轨迹文件
+
+| 主文件 | 配套文件 | 读取方式 |
+|---|---|---|
+| CP2K 坐标 XYZ | CELL | 对每帧用注释中的 `i = 步数` 精确查表，晶胞矢量以 Å 表示。可有额外的 CELL 步，重复步或缺少所需步时报错。CELL 未声明周期方向，按三维周期显示。 |
+| GROMACS GRO | TOP | 按拓扑展开分子，核对每帧原子数、残基和原子名，用拓扑质量识别元素。 |
+| GROMACS TRR | TPR | 从 TPR 取元素顺序和周期方向，从 TRR 逐帧取坐标和晶胞，nm 转 Å。没有坐标的速度／力记录会跳过。 |
+
+使用「按路径打开」时，填写主文件路径，配套路径每行一个。TOP 的本地 ITP 引用从 TOP 所在目录及其子目录读取，标准力场来自安装的 GROMACS 库。浏览器「本地文件」或拖放时一起选主文件、配套文件，以及 TOP 引用的本地 ITP；有目录层级的引用请用按路径打开。TRR 和 XYZ 轨迹均按需读取。TOP 使用 MDAnalysis（可设置 `STRUCTURE_VIEWER_MDA_PYTHON`），TPR 使用兼容版本的 GROMACS（可设置 `STRUCTURE_VIEWER_GMX`）。
+
 ## 在 nd3 聊天里点一次打开 LAMMPS 轨迹
 
 告诉 agent：“把这次计算的 dump、data 和 log 配成一个 Structure Viewer 链接。”远程 agent 调用 `create_lammps_link`，传入同一目录的 dump 和明确属于该计算的配套文件绝对路径，再把返回的 `.svtraj` 绝对路径作为聊天文件链接。点击链接时，查看器在该主机读取配套元数据并按需加载轨迹，无需手工下载或转换。例子见 [water.svtraj](examples/lammps/water.svtraj)。普通 dump 文件链接不会隐式读取邻近文件。
@@ -14,7 +24,7 @@
 
 - **本地文件** 支持多选和拖放。LAMMPS 可联合选中一条 atom/custom 文本 dump、同次计算的 data、输入脚本和日志，识别元素、单位和边界条件。质量推断会显示提示，映射冲突会报错。支持 metal / real 单位。
 - **按路径打开** 中填主结构的绝对路径，LAMMPS 配套文件每行一个绝对路径。远程 GRO 和 dump 在文件所在主机分批索引，按需传输完整帧。
-- **GROMACS** 支持单帧和多帧 GRO，坐标与晶胞从 nm 转成 Å。XTC、TRR、TPR 尚未接入。
+- **GROMACS** 支持单帧和多帧 GRO，坐标与晶胞从 nm 转成 Å。TRR 与 TPR 可联合读取；XTC 尚未接入。
 - **CIF、PDB、LAMMPS data** 使用当前插件主机已有的 ASE 转换。若 ASE 在独立环境，可通过 `STRUCTURE_VIEWER_ASE_PYTHON` 指定解释器。静态转换输入上限为 32 MiB，文本轨迹继续按需读取。
 - **XDATCAR** 支持重复晶胞头部，每帧使用自己的晶胞。
 

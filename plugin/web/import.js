@@ -12,6 +12,8 @@
     return null;
   }
   async function classify(file) {
+    if (/\.trr$/i.test(file.name)) return "trr";
+    if (/\.(top|itp|tpr|cell)$/i.test(file.name)) return "companion";
     const prefix=await file.slice(0,8192).text();
     if (/^ITEM: (?:TIMESTEP|UNITS|TIME)/m.test(prefix)) return 'lammps-dump-text';
     if (/^data[._-]|\.(data|lmp)$/i.test(file.name) && /\d+\s+atom types\b/m.test(prefix)) return 'lammps-data';
@@ -32,7 +34,10 @@
     const entries=await Promise.all(files.map(async file=>({file,format:await classify(file)})));
     if(format!=='auto') {
       if(files.length===1)entries[0].format=format;
-      else if(!entries.some(entry=>entry.format===format))entries[0].format=format;
+      else if(!entries.some(entry=>entry.format===format)){
+        const primary=entries.find(entry=>entry.format!=='companion');
+        if(primary)primary.format=format;
+      }
     }
     const dumps=entries.filter(entry=>entry.format==='lammps-dump-text');
     const candidates=entries.filter(entry=>entry.format!=='companion' && !(dumps.length && entry.format==='lammps-data'));
@@ -40,7 +45,11 @@
     const primary=candidates[0],file=primary.file;
     const selectedFormat=files.length===1 && format!=='auto'?format:primary.format;
     const other=files.filter(item=>item!==file);
-    if(other.length && !selectedFormat.startsWith('lammps'))throw Error('配套文件联合读取目前用于 LAMMPS；其他格式请一次选择一个结构文件。');
+    if (primary.format==='trr' || (other.length && !selectedFormat.startsWith('lammps'))) {
+      const paired=await StructurePaired.open(primary,other);
+      if(paired)return {name:file.name,...paired};
+    }
+    if(other.length && !selectedFormat.startsWith('lammps'))throw Error('主文件与配套文件的格式不匹配。');
     const name=localName(file.name,selectedFormat==='local'?'auto':selectedFormat);
     if(name)return {name:file.name,store:await StructureTrajectory.local(file,name),note:'本地浏览器读取 · 坐标单位 Å · 未上传文件'};
     const companions=await companionsText(other);
