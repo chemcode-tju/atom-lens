@@ -100,6 +100,7 @@ class StructureViews {
       if(source?.width&&source?.height){
         const cover=document.createElement('canvas');cover.className='resize-cover';
         cover.width=source.width;cover.height=source.height;
+        cover.style.width=pane.viewer.WIDTH+'px';cover.style.height=pane.viewer.HEIGHT+'px';
         try{cover.getContext('2d').drawImage(source,0,0);pane.element.append(cover);pane.resizeCover=cover;}catch{}
       }
     }
@@ -114,7 +115,7 @@ class StructureViews {
     const width=pane.canvas.clientWidth,height=pane.canvas.clientHeight;
     if(!pane.element.hidden&&width>0&&height>0){
       const size=`${width}:${height}:${globalThis.devicePixelRatio||1}`;
-      if(pane.lastSize!==size){pane.viewer.resize();pane.lastSize=size;}
+      this.resizePane(pane,width,height,size);
     }
     // Let the new WebGL frame reach the compositor before uncovering it.
     pane.resizeReveal=requestAnimationFrame(()=>{
@@ -122,6 +123,20 @@ class StructureViews {
         if(!pane.resizeTimer){pane.resizeCover?.remove();pane.resizeCover=null;}
       });
     });
+  }
+  resizePane(pane,width,height,size) {
+    if(pane.lastSize===size)return;
+    if(pane.projectionSize){
+      // 3Dmol fixes horizontal span in orthographic mode and vertical FOV in
+      // perspective. Keep the focal length in CSS pixels for either projection.
+      const perspective=pane.preset==='perspective';
+      const ratio=perspective?height/pane.projectionSize.height:width/pane.projectionSize.width;
+      const halfAngle=perspective?10:20;
+      const angle=Math.atan(Math.tan(halfAngle*Math.PI/180)*ratio)*180/Math.PI;
+      pane.viewer.setCameraParameters({fov:perspective?2*angle:angle});
+    }
+    pane.viewer.resize();
+    pane.lastSize=size;
   }
   bindShiftSelection(pane) {
     const {element,canvas,viewer}=pane;
@@ -179,17 +194,15 @@ class StructureViews {
     if (!visible.includes(this.active)) this.activate(1);
     this.panes.forEach((pane, index) => { pane.element.hidden = !visible.includes(index); });
     this.activate(this.active);
+    this.panes.forEach(pane=>{
+      if(pane.element.hidden)return;
+      const width=pane.canvas.clientWidth,height=pane.canvas.clientHeight;
+      if(width&&height)this.resizePane(pane,width,height,`${width}:${height}:${globalThis.devicePixelRatio||1}`);
+    });
     if (this.scene) this.renderScene(this.scene,this.latest[2],false);
     document.getElementById("layout").value = layout;
     const single = layout === "single";
     document.getElementById("expand").querySelector("use").setAttribute("href", "#i-" + (single ? "multi-view" : "expand"));
-    requestAnimationFrame(() => this.panes.forEach(pane => {
-      if (!pane.element.hidden) {
-        pane.viewer.resize();
-        if (pane.ready) this.fit(pane);
-        pane.viewer.render();
-      }
-    }));
   }
   toggleExpand() {
     if (this.layout === "single") this.setLayout(this.previousLayout);
@@ -214,6 +227,11 @@ class StructureViews {
   setOrientation(preset) { this.orient(this.panes[this.active], preset); this.activate(this.active); }
   fit(pane = this.panes[this.active]) {
     if (!pane.ready || pane.element.hidden || !this.bounds) return;
+    const width=pane.canvas.clientWidth,height=pane.canvas.clientHeight;
+    if(!width||!height)return;
+    pane.projectionSize={width,height};
+    pane.viewer.setCameraParameters({fov:20});
+    this.resizePane(pane,width,height,`${width}:${height}:${globalThis.devicePixelRatio||1}`);
     const {min, max} = this.bounds;
     const center = this.follow ? [this.follow.x,this.follow.y,this.follow.z] : min.map((n, i) => (n + max[i]) / 2);
     const view = pane.viewer.getView();
@@ -307,7 +325,8 @@ class StructureViews {
   }
   captureScene() {
     const pane=this.panes[this.active];
-    return Object.freeze({scene:this.scene,preset:pane.preset,view:pane.viewer.getView().slice(),
+    this.commitResize(pane);
+    return Object.freeze({scene:this.scene,preset:pane.preset,fov:pane.viewer.fov,view:pane.viewer.getView().slice(),
       width:pane.canvas.clientWidth,height:pane.canvas.clientHeight,
       pixelRatio:pane.canvas.querySelector('canvas').width/pane.canvas.clientWidth});
   }
@@ -335,6 +354,7 @@ class StructureViews {
     pane.viewer.resize();pane.preset=capture.preset;
     exporter.renderScene({...capture.scene,options:{...capture.scene.options,labelScale:width/capture.width}},[],false);
     pane.viewer.setProjection(pane.preset==='perspective'?'perspective':'orthographic');
+    pane.viewer.setCameraParameters({fov:capture.fov});
     pane.viewer.setView(capture.view.slice());
     pane.viewer.setBackgroundColor('#ffffff',0);pane.viewer.render();
     exporter.drawSelection(pane);

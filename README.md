@@ -12,11 +12,11 @@
 
 使用「按路径打开」时，填写主文件路径，配套路径每行一个。TOP 的本地 ITP 引用从 TOP 所在目录及其子目录读取，标准力场来自安装的 GROMACS 库。浏览器「本地文件」或拖放时一起选主文件、配套文件，以及 TOP 引用的本地 ITP；有目录层级的引用请用按路径打开。TRR 和 XYZ 轨迹均按需读取。TOP 使用 MDAnalysis（可设置 `STRUCTURE_VIEWER_MDA_PYTHON`），TPR 使用兼容版本的 GROMACS（可设置 `STRUCTURE_VIEWER_GMX`）。
 
-## 在 nd3 聊天里点一次打开 LAMMPS 轨迹
+## 在 nd3 聊天直接打开一组文件
 
-告诉 agent：“把这次计算的 dump、data 和 log 配成一个 Structure Viewer 链接。”远程 agent 调用 `create_lammps_link`，传入同一目录的 dump 和明确属于该计算的配套文件绝对路径，再把返回的 `.svtraj` 绝对路径作为聊天文件链接。点击链接时，查看器在该主机读取配套元数据并按需加载轨迹，无需手工下载或转换。例子见 [water.svtraj](examples/lammps/water.svtraj)。普通 dump 文件链接不会隐式读取邻近文件。
+告诉 agent：“直接在侧栏打开这次计算的 dump，配上同一次计算的 data 和 log。” Agent 调用只读工具 `open_structure_path(path, companions)`，主轨迹和配套文件均传 nd3 上的绝对路径。CP2K XYZ + CELL、GROMACS GRO + TOP 和 TRR + TPR 也使用同一个入口。手动操作可用查看器的「按路径打开」。结构留在服务器，路径窗口显示插件所在主机名。
 
-链接只记录文件名，不保存轨迹副本或冻结的元素映射；请在拥有这些文件的主机聊天中打开。若目录只读、配套文件跨目录，agent 可直接用 `open_structure_path(path, companions)` 打开查看器，无需写入。路径窗口显示运行插件的系统主机名（例如 SSH 别名 nd3 实际可能显示 nd3-node8）。
+普通聊天文件链接只携带一个路径。需要可反复点击的 LAMMPS 文件链接时，可另行要求保存一个可复用的 `.svtraj`，例如 [water.svtraj](examples/lammps/water.svtraj)。直接查看无需创建它。
 
 ## 0.11.0 结构查看界面与 MD 文件导入
 

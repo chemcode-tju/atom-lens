@@ -72,7 +72,7 @@ console.log('Selection updates preserve the atom model and camera, including cle
  let copies=0,removals=0;
  canvas.querySelector=()=>({width:900,height:1200});
  element.append=()=>{};
- global.document.createElement=()=>({getContext:()=>({drawImage:()=>copies++}),remove:()=>removals++});
+ global.document.createElement=()=>({style:{},getContext:()=>({drawImage:()=>copies++}),remove:()=>removals++});
  const pane=interaction.panes[0];pane.ready=true;
  canvas.clientWidth=460;resizeCallback();
  canvas.clientWidth=470;resizeCallback();
@@ -142,4 +142,19 @@ console.log('Selection updates preserve the atom model and camera, including cle
  label.sprite.material={};views.drawSelection(pane);
  assert.equal(scales.length,2);assert.deepEqual(scales[0],scales[1]);assert.equal(paints,2);
  console.log('Context recovery reapplies label scales without requiring a camera change.');
+}
+
+// Check both 3Dmol projection conventions while width and height vary
+// independently. Repeated resize must not accumulate any change in scale.
+for(const preset of ['xz','perspective']){
+ const viewer={fov:20,setCameraParameters({fov}){this.fov=fov;},resize(){}};
+ const pane={viewer,preset,projectionSize:{width:650,height:800}};
+ const focalLength=(width,height)=>preset==='xz'
+   ?width/(2*Math.tan(viewer.fov*Math.PI/180))
+   :height/(2*Math.tan(viewer.fov*Math.PI/360));
+ const initial=focalLength(650,800);
+ for(const [w,h] of [[490,800],[810,575],[340,290],[650,800]]){
+   StructureViews.prototype.resizePane(pane,w,h,`${w}:${h}:2`);
+   assert.ok(Math.abs(focalLength(w,h)-initial)<1e-9);
+ }
 }

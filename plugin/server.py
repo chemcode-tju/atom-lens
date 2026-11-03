@@ -1,7 +1,7 @@
 """Dependency-free MCP server for the native Codex file-editor entrypoint."""
 
 # Configuration
-plugin_version = "0.12.1"
+plugin_version = "0.12.2"
 resource_uri = "ui://structure-viewer/editor.html"
 
 from pathlib import Path
@@ -112,7 +112,7 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
             "_meta": {"ui": {"visibility": ["app"]}},
         }, {
             "name": "open_structure_path", "title": "Structure Viewer",
-            "description": "Open a structure on this host using its absolute path, including bare POSCAR/CONTCAR/XDATCAR, GRO, LAMMPS dumps/data, CIF and PDB. Pass matching companions for CP2K XYZ + CELL, GRO + TOP, TRR + TPR, or LAMMPS dump + data/input/log. Omit path to open the structure browser.",
+            "description": "Default tool for opening single or paired structures directly in the sidebar. Pass the original absolute paths together; no intermediate manifest is needed, including bare POSCAR/CONTCAR/XDATCAR, GRO, LAMMPS dumps/data, CIF and PDB. Pass matching companions for CP2K XYZ + CELL, GRO + TOP, TRR + TPR, or LAMMPS dump + data/input/log. Omit path to open the structure browser.",
             "inputSchema": {"type": "object", "additionalProperties": False,
                             "properties": {"path": {"type": "string"}, "companions": {"type":"array","items":{"type":"string"},"maxItems":31}}},
             "annotations": {"readOnlyHint": True, "openWorldHint": False},
@@ -120,7 +120,7 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
                       "openai/ui": {"entrypoints": [{"type": "thread"}]}},
         }, {
             "name": "create_lammps_link", "title": "Create a clickable LAMMPS trajectory link",
-            "description": "When the user wants a clickable structure link, pass the absolute dump path and explicit data/input/log files from the same run and directory on this host. Creates a small reusable .svtraj beside the dump, without copying or rewriting trajectories. Return its absolute path as a Markdown file link in this host’s chat.",
+            "description": "Only when the user explicitly wants a reusable manifest file on disk (for ordinary multi-file viewing call open_structure_path directly), pass the absolute dump path and explicit data/input/log files from the same run and directory on this host. Creates a small reusable .svtraj beside the dump, without copying or rewriting trajectories. Return its absolute path as a Markdown file link in this host’s chat.",
             "inputSchema": {"type": "object", "additionalProperties": False, "required": ["path", "companions"],
                             "properties": {"path": {"type": "string"}, "companions": {"type": "array", "maxItems": 31, "items": {"type": "string"}}}},
             "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False},
