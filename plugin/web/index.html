@@ -95,12 +95,12 @@
 <dialog id="snapshot-dialog">
   <h2>保存快照</h2>
   <div class="snapshot-preview"><img id="snapshot-preview" alt="当前构型快照" hidden></div>
-  <div class="export-fields"><label>文件名 <input id="snapshot-name" value="structure" maxlength="80"></label><label>格式 <select id="snapshot-format"><option value="png">PNG</option><option value="jpeg">JPEG</option><option value="pdf">PDF</option></select></label>
+  <fieldset id="snapshot-controls"><div class="export-fields"><label>文件名 <input id="snapshot-name" value="structure" maxlength="80"></label><label>格式 <select id="snapshot-format"><option value="png">PNG</option><option value="jpeg">JPEG</option><option value="pdf">PDF</option></select></label>
   <label>DPI <select id="snapshot-dpi"><option value="96">96</option><option value="150">150</option><option value="300" selected>300</option><option value="600">600</option></select></label>
   <label class="check-row"><input id="snapshot-transparent" type="checkbox" checked>透明背景（PNG）</label><label class="check-row"><input id="snapshot-crop" type="checkbox">裁去四周空白</label></div>
   <div class="export-fields"><label>保存到 <select id="snapshot-destination"><option value="local">本地 Mac</option><option value="server">服务器</option></select></label>
   <label id="snapshot-directory-row" hidden>目录 <input id="snapshot-directory" placeholder="结构所在目录"></label></div>
-  <output id="snapshot-result"></output><div class="dialog-actions"><button id="snapshot-close">关闭</button><button id="snapshot-save">保存</button></div>
+  </fieldset><output id="snapshot-result" aria-live="polite"></output><div class="dialog-actions"><button id="snapshot-close">关闭</button><button id="snapshot-save">保存</button></div>
 </dialog>
 <dialog id="animation-dialog"><h2>导出动画</h2>
 <fieldset id="animation-fields"><label>文件名<input id="animation-name" value="trajectory" maxlength="80"></label>

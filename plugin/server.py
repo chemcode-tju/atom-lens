@@ -1,7 +1,7 @@
 """Dependency-free MCP server for the native Codex file-editor entrypoint."""
 
 # Configuration
-plugin_version = "0.12.7"
+plugin_version = "0.13.0"
 resource_uri = "ui://structure-viewer/editor.html"
 
 from pathlib import Path

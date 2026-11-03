@@ -115,9 +115,7 @@
 - 播放设置含 fps、倍速、每 N 帧与循环。默认 60 fps × 1，渲染跟不上时跳帧。
 - 快照保留当前视图的元素显隐、局部样式、氢键、编号及光影；不包含临时选择高亮与测量连线、工具栏或坐标轴。PNG 支持透明背景，JPEG/PDF 白底，可裁去四周空白，DPI 96/150/300/600。PDF 内嵌栅格图。
 - 0.7.0 快照目的地：本地 Mac 插件弹出 macOS 原生文件夹选择窗口（可取消），随后保存图片；nd3 等服务器默认保存到结构文件本身所在目录，可输入另一个已存在的绝对目录。同名自动追加序号，不覆盖文件，不再创建 `structure-snapshots/` 子目录。
-- nd3 快照选“本地 Mac”时，0.8.1 使用 **Structure Snapshot Saver** 后台助手：维护一条现有 SSH 连接，接收本次导出的图片，在 Mac 弹出 `NSSavePanel` 选择文件夹和文件名。取消不保存；覆盖由系统确认。无网络监听端口，不监控 Downloads，不依赖浏览器打开自定义 URL。
-- 助手在登录时启动，菜单栏“结构快照 · nd3”表示已连接；可从菜单退出，或重新打开 App 恢复。每次保存都需要用户确认。插件等待助手回报已保存/已取消；离线明确报错。当前仅配置 nd3；0.9.0 取消人为总文件大小上限并支持动画。
-- 图片暂存在 nd3 的 `~/.cache/structure-viewer/exports` 私有目录；请求超过 10 分钟未处理会过期，超过 24 小时的快照在下次导出时清理。Mac 保存路径不回传到服务器。SSH 中断后自动重连，不重试已经交给系统窗口的保存请求。
+- 在远程聊天里选“保存到 Mac”时，Structure Snapshot Saver 通过选定的 SSH 主机接收导出，在 Mac 弹出系统保存窗口。助手一次连接一个 SSH 主机，不监听网络端口。服务器端暂存请求，Mac 上选择的路径不会回传。
 - 0.8.0 选择仅更新合批轮廓和测量连线，保留原子模型与相机；信息栏固定高度，尺寸变化不再触发自动适应。
 
 ## 安装
@@ -131,13 +129,20 @@ codex plugin marketplace add .
 codex plugin add structure-viewer@atomic-structure-tools
 ```
 
-如需 nd3 快照保存到本地 Mac，在 **Mac** 上额外执行（需要 Apple Command Line Tools）：
+### 可选：把远程快照和动画保存到 Mac
+
+在 Mac 安装菜单栏助手（需要 Apple Command Line Tools）：
 
 ```sh
 python3 native/install_helper.py
 ```
 
-助手安装到 `~/Applications/Structure Snapshot Saver.app`，同时安装 `~/Library/LaunchAgents/org.structure-viewer.snapshot-saver.plist`。使用现有 `ssh nd3` 连接；目前仅配置 nd3 别名。卸载时先从菜单退出，再移除该登录项与 App；服务器保存功能独立可用。
+1. 打开 Mac 菜单栏的「结构快照 → SSH 连接设置…」。默认读取 `~/.ssh/config`，也可以选择另一份 OpenSSH 配置文件。
+2. 从列表选择与远程聊天对应的主机别名，或直接填入别名。列表识别 `Include` 文件中的具体别名。实际连接由系统 OpenSSH 处理，包括用户、端口、密钥及跳板机。该别名应已在终端连接过，并能以非交互方式登录。
+3. 保留默认远程脚本路径 `~/.local/share/structure-viewer/snapshot-queue.pyz`，或填写自选的绝对路径（也支持 `~/`）。点击「安装脚本并连接」。助手会把队列程序和依赖一起上传，远端只需要 Python 3.9 或以上。切换服务器时重新打开该设置即可。
+4. 菜单栏显示所选别名后，在远程查看器选「快照 → 保存到：本地 Mac」。系统保存窗口在 Mac 上弹出，服务器安装 Structure Viewer 的步骤仍按下节执行。
+
+助手安装到 `~/Applications/Structure Snapshot Saver.app`，由 `~/Library/LaunchAgents/org.structure-viewer.snapshot-saver.plist` 在登录时启动。本机保存配置于 `~/Library/Application Support/Structure Viewer/connection.json`，记录 SSH 配置路径、主机别名和部署路径。升级旧助手后首次选择自己的 SSH 主机并安装脚本。卸载时可退出助手、移除登录项和 App；远程脚本也可单独移除。
 
 安装后打开本地 `.extxyz` 文件。如果仍然使用内置文本编辑器，在文件的打开方式菜单中选择 **Structure Viewer**；宿主可以记住按扩展名选择的查看器。若新插件未被发现，重新打开聊天或重启桌面端后再试。
 

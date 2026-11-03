@@ -6,7 +6,7 @@ let selection = [], timer = null, loading = false, readGeneration = 0;
 let displayState = new StructureSelection.DisplayState();
 let streamComplete = true, binaryTrajectory = false, pickedFile = false;
 let drift = null, paintTicket = 0, selectionTicket = 0, snapshotTicket = 0, snapshotData = null;
-let snapshotHost = null, activeRecord = null;
+let snapshotHost = null, activeRecord = null, snapshotSaving = false;
 let navigationTarget = null, navigationTask = null;
 let playbackGeneration = 0;
 let playback = {fps:60, speed:1, step:1, loop:true};
@@ -358,7 +358,7 @@ $("drift-apply").onclick=async()=>{
   }catch(error){$("drift-error").textContent=error.message;}finally{$("drift-apply").disabled=false;}
 };
 $("source-toggle").onclick = () => { stop(); $("source-panel").hidden = !$("source-panel").hidden; if(doc)$("source").value=activeRecord.text; };
-request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.12.7" }, appCapabilities: {} })
+request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.13.0" }, appCapabilities: {} })
   .then(() => { send("ui/notifications/initialized", {}); status("已连接，等待文件…"); })
   .catch(error => status(`连接失败：${error.message}`, true));
 
@@ -409,20 +409,39 @@ document.addEventListener("drop", event => {
 });
 window.addEventListener("pagehide", () => { stop(); discardDocument(); });
 function snapshotOptions(){return {dpi:Number($("snapshot-dpi").value),format:$("snapshot-format").value,transparent:$("snapshot-transparent").checked,crop:$("snapshot-crop").checked};}
-async function refreshSnapshot(){
-  const ticket=++snapshotTicket;snapshotData=null;$("snapshot-save").disabled=true;$("snapshot-result").textContent='';
-  try {
-    const result=await StructureSnapshot.capture(views,snapshotOptions());
-    if(ticket!==snapshotTicket)return;snapshotData=result;$("snapshot-preview").src=result.preview;$("snapshot-preview").hidden=false;$("snapshot-save").disabled=false;
-  }catch(error){if(ticket===snapshotTicket)$("snapshot-result").textContent=error.message;}
+function syncSnapshotButton() {
+  const button=$("snapshot-save");
+  button.disabled=snapshotSaving||!snapshotHost||!snapshotData;
+  if(snapshotSaving)button.textContent='正在保存…';
+  else if(!snapshotHost)button.textContent='保存快照';
+  else if(!snapshotData&&!$("snapshot-result").textContent)button.textContent='正在生成预览…';
+  else button.textContent=$("snapshot-destination").value==='server'?'保存到服务器':'保存到 Mac…';
+}
+function refreshSnapshot() {
+  const ticket=++snapshotTicket;
+  snapshotData=null;$("snapshot-result").textContent='';syncSnapshotButton();
+  afterPaint(async()=>{
+    if(ticket!==snapshotTicket||!$("snapshot-dialog").open||!snapshotHost)return;
+    try {
+      const result=await StructureSnapshot.capture(views,snapshotOptions());
+      if(ticket!==snapshotTicket)return;
+      snapshotData=result;$("snapshot-preview").src=result.preview;$("snapshot-preview").hidden=false;
+    }catch(error){
+      if(ticket!==snapshotTicket)return;
+      $("snapshot-preview").hidden=true;$("snapshot-result").textContent=error.message;
+    }
+    syncSnapshotButton();
+  });
 }
 $("snapshot").onclick=async()=>{
   if(!views||!doc)return;stop();$("snapshot-name").value=$("filename").textContent.replace(/\.[^.]+$/,'').replace(/[^\p{L}\p{N}_ .()\-]/gu,'_')+'-frame-'+(frameIndex+1);
-  snapshotData=null;$("snapshot-save").disabled=true;$("snapshot-preview").hidden=true;
+  const ticket=++snapshotTicket;
+  snapshotData=null;snapshotSaving=false;$("snapshot-controls").disabled=true;$("snapshot-preview").hidden=true;
   $("snapshot-dialog").showModal();snapshotHost=null;
-  $("snapshot-result").textContent='';
+  $("snapshot-result").textContent='';syncSnapshotButton();
   try {
     const response=await request('tools/call',{name:'snapshot_context',arguments:fileRef?.token?{token:fileRef.token}:{}});
+    if(ticket!==snapshotTicket||!$("snapshot-dialog").open)return;
     if(response.isError||!response.structuredContent)throw Error('无法读取保存位置，请重新打开查看器');
     snapshotHost=response.structuredContent;
     const serverOption=$("snapshot-destination").querySelector('[value="server"]');
@@ -430,32 +449,33 @@ $("snapshot").onclick=async()=>{
     serverOption.textContent='服务器 · '+snapshotHost.host;
     $("snapshot-destination").value=(!snapshotHost.nativePicker&&!pickedFile)?'server':'local';
     $("snapshot-directory").value=pickedFile?'':snapshotHost.directory;
-    updateSnapshotDestination();afterPaint(refreshSnapshot);
-  }catch(error){$("snapshot-result").textContent=error.message;}
+    $("snapshot-controls").disabled=false;updateSnapshotDestination();refreshSnapshot();
+  }catch(error){if(ticket===snapshotTicket)$("snapshot-result").textContent=error.message;}
 };
 for(const id of ["snapshot-format","snapshot-dpi","snapshot-transparent","snapshot-crop"])$(id).onchange=()=>{
-  snapshotData=null;$("snapshot-save").disabled=true;
-  $("snapshot-transparent").disabled=$("snapshot-format").value!=='png';afterPaint(refreshSnapshot);
+  $("snapshot-transparent").disabled=$("snapshot-format").value!=='png';refreshSnapshot();
 };
-$("snapshot-close").onclick=()=>{$("snapshot-dialog").close();++snapshotTicket;};
+$("snapshot-close").onclick=()=>$("snapshot-dialog").close();
+$("snapshot-dialog").addEventListener("cancel",event=>{if(snapshotSaving)event.preventDefault();});
+$("snapshot-dialog").addEventListener("close",()=>{if(!$("snapshot-dialog").open)++snapshotTicket;});
 function updateSnapshotDestination(){
   const server=$("snapshot-destination").value==='server';
   $("snapshot-directory-row").hidden=!server;
-  $("snapshot-save").textContent=server?'保存到服务器':'选择本地文件夹并保存…';
+  syncSnapshotButton();
 }
 $("snapshot-destination").onchange=updateSnapshotDestination;
 $("snapshot-save").onclick=async()=>{
-  if(!snapshotData||!snapshotHost)return;
+  if(snapshotSaving||!snapshotData||!snapshotHost)return;
   const result=snapshotData,format=$("snapshot-format").value,name=$("snapshot-name").value+'.'+format;
   if(!/^[\p{L}\p{N}_ .()\-]{1,100}\.(png|jpeg|pdf)$/u.test(name)||name.startsWith('.')){$("snapshot-result").textContent='请使用字母、数字、中文、空格、下划线或短横线命名';return;}
-  $("snapshot-save").disabled=true;$("snapshot-close").disabled=true;
+  snapshotSaving=true;$("snapshot-controls").disabled=true;$("snapshot-close").disabled=true;syncSnapshotButton();
   let job;
   try {
     job=await mediaCall({action:'begin',kind:'image',name});
     await uploadMedia(job.id,result.bytes);
     await saveMedia(job.id,snapshotHost,'snapshot');
   }catch(error){$("snapshot-result").textContent=error.message;}
-  finally{if(job)await mediaCall({action:'cancel',id:job.id}).catch(()=>{});$("snapshot-save").disabled=false;$("snapshot-close").disabled=false;}
+  finally{if(job)await mediaCall({action:'cancel',id:job.id}).catch(()=>{});snapshotSaving=false;$("snapshot-controls").disabled=false;$("snapshot-close").disabled=false;syncSnapshotButton();}
 };
 
 $("open-path").onclick=async()=>{
