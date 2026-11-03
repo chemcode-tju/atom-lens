@@ -1,7 +1,7 @@
 /* A growing byte index plus a bounded LRU of decoded frames. No all-frame text. */
 (function(root) {
   'use strict';
-  const pause=()=>new Promise(resolve=>setTimeout(resolve,40));
+  const pause=()=>new Promise(resolve=>setTimeout(resolve,0));
   class FrameStore {
     constructor(name,source,{maxFrames=16,maxBytes=64*1024*1024}={}) {
       this.name=name;this.source=source;this.maxFrames=maxFrames;this.maxBytes=maxBytes;
@@ -64,6 +64,35 @@
   // not JS characters, including CRLF and multibyte comments.
   class ByteLines {
     constructor(file){this.file=file;this.offset=0;this.buffer=new Uint8Array();this.cursor=0;this.decoder=new TextDecoder();}
+    async skipRows(count, checkBlank=true) {
+      // Index coordinates as bytes. Decode only requested frames.
+      let nonblank=false;
+      rows: while(count>0) {
+        if(this.cursor===this.buffer.length) {
+          if(this.offset>=this.file.size)throw Error('轨迹末尾存在不完整帧');
+          this.buffer=new Uint8Array(await this.file.slice(this.offset,this.offset+65536).arrayBuffer());this.cursor=0;
+        }
+        const end=this.buffer.indexOf(10,this.cursor);
+        const stop=end<0?this.buffer.length:end;
+        if(checkBlank && !nonblank) {
+          for(let i=this.cursor;i<stop;i++){
+            const byte=this.buffer[i];
+            if(byte>=128){
+              // Preserve Unicode whitespace handling without decoding ordinary coordinates.
+              if(!(await this.next()).text.trim())throw Error('轨迹末尾存在不完整帧');
+              count--;continue rows;
+            }
+            if(byte!==32 && (byte<9 || byte>13)){nonblank=true;break;}
+          }
+        }
+        const next=stop+(end>=0?1:0);
+        this.offset+=next-this.cursor;this.cursor=next;
+        if(end>=0 || this.offset===this.file.size) {
+          if(checkBlank && !nonblank)throw Error('轨迹末尾存在不完整帧');
+          nonblank=false;count--;
+        }
+      }
+    }
     async next() {
       const start=this.offset,parts=[];
       while(true) {
@@ -118,7 +147,7 @@
           count=Number(row.text);if(!Number.isSafeInteger(count)||count<1||count>100000)throw Error('原子数必须在 1–100000 范围内');
           await this.required();
         }
-        for(let j=0;j<count;j++)if(!(await this.required()).text.trim())throw Error('轨迹末尾存在不完整帧');
+        await this.lines.skipRows(count);
         if(this.vasp)this.frameHeaders.push(this.header);
         this.offsets.push(start);this.ends.push(this.lines.offset);this.count++;
         this.complete=this.lines.offset>=this.file.size||(this.vasp&&!this.trajectory);

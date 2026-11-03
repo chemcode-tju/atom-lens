@@ -28,6 +28,7 @@ const StructurePaired = (() => {
   }
 
   async function cp2k(file, cell) {
+    if(file.xyzSource && cell.cellBinding)return storeFor(await file.xyzSource(cell.cellBinding),'CP2K XYZ + CELL');
     const table=await cellTable(cell);
     const source=file.xyzSource ? await file.xyzSource() : new StructureTrajectory.LocalSource(file,file.name);
     if(!file.xyzSource)await source.initialize();

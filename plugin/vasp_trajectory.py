@@ -37,7 +37,7 @@ def read_vasp_batch(stream: BinaryIO, offset: int, frame_limit: int, trajectory:
     frames: list[bytes] = []
     offsets: list[int] = []
     size = 0
-    while len(offsets) < frame_limit and size < (1048576 if index_only else 262144):
+    while len(offsets) < frame_limit and size < (8 * 1048576 if index_only else 262144):
         start = stream.tell()
         mode = stream.readline()
         while mode and not mode.strip():

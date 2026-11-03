@@ -358,7 +358,7 @@ $("drift-apply").onclick=async()=>{
   }catch(error){$("drift-error").textContent=error.message;}finally{$("drift-apply").disabled=false;}
 };
 $("source-toggle").onclick = () => { stop(); $("source-panel").hidden = !$("source-panel").hidden; if(doc)$("source").value=activeRecord.text; };
-request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.12.0" }, appCapabilities: {} })
+request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.12.1" }, appCapabilities: {} })
   .then(() => { send("ui/notifications/initialized", {}); status("已连接，等待文件…"); })
   .catch(error => status(`连接失败：${error.message}`, true));
 

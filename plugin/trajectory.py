@@ -22,6 +22,58 @@ def read_line(stream: BinaryIO, remaining: int) -> bytes:
     return line
 
 
+def xyz_index(stream: BinaryIO, offset: int, end: int, limit: int) -> dict[str, Any]:
+    """Count complete XYZ records within a bounded block, preserving byte offsets."""
+    stream.seek(offset)
+    data = stream.read(8 * 1048576)
+    eof = offset + len(data) == end
+    rows = data.split(b"\n")
+    # The last item is either a partial line, a final unterminated line,
+    # or the empty sentinel produced by a trailing newline.
+    if not eof or not rows[-1]:
+        rows.pop()
+    cursor = offset
+    i = 0
+    offsets = []
+    while i < len(rows) and len(offsets) < limit:
+        start = cursor
+        while i < len(rows) and not rows[i].strip():
+            cursor += len(rows[i]) + 1
+            i += 1
+        if i == len(rows):
+            if not eof:
+                cursor = start  # Let the next frame own its leading blank lines.
+            break
+        count = rows[i].strip()
+        if not count.isdigit() or not 1 <= int(count) <= 100000:
+            if offsets:
+                cursor = start
+                break
+            raise ValueError(f"字节 {cursor} 处不是有效的原子数。")
+        next_frame = i + int(count) + 2
+        if next_frame > len(rows):
+            if offsets:
+                cursor = start
+                break
+            if not eof:
+                raise ValueError("单帧超过 8 MiB 分段预览上限。")
+            raise ValueError("轨迹末尾存在不完整帧。")
+        atoms = rows[i + 2:next_frame]
+        if b"" in atoms or any(map(bytes.isspace, atoms)):
+            if offsets:
+                cursor = start
+                break
+            raise ValueError("轨迹末尾存在不完整帧。")
+        offsets.append(start)
+        cursor += sum(map(len, rows[i:next_frame])) + next_frame - i
+        i = next_frame
+    cursor = min(cursor, end)
+    if not offsets and cursor < end and not eof:
+        raise ValueError("单帧超过 8 MiB 分段预览上限。")
+    return {"supported": True, "text": "", "frameCount": len(offsets), "offsets": offsets,
+            "nextOffset": cursor, "totalBytes": end, "eof": cursor == end}
+
+
 def read_frames(params: dict[str, Any]) -> dict[str, Any]:
     """Read complete frames only; the UI cannot nominate a filesystem path."""
     host_path = params.get("_meta", {}).get("openai/resource", {}).get("path")
@@ -65,17 +117,21 @@ def read_frames(params: dict[str, Any]) -> dict[str, Any]:
             if file_version(os.fstat(stream.fileno())) != version or file_version(path.stat()) != version:
                 raise ValueError("读取期间文件已改变，请重新打开。")
             return {**batch, "version": version}
+        if index_only:
+            batch = xyz_index(stream, offset, info.st_size, frame_limit)
+            if file_version(os.fstat(stream.fileno())) != version or file_version(path.stat()) != version:
+                raise ValueError("读取期间文件已改变，请重新打开。")
+            return {**batch, "version": version}
         stream.seek(offset)
         size = 0
-        while frame_count < frame_limit and size < (1048576 if index_only else 262144):
+        while frame_count < frame_limit and size < 262144:
             start = stream.tell()
             frame = bytearray()
             frame_size = 0
             while True:
                 line = read_line(stream, 8388608 - frame_size)
                 frame_size += len(line)
-                if not index_only:
-                    frame.extend(line)
+                frame.extend(line)
                 if line.strip() or not line:
                     break
             if not line:
@@ -91,11 +147,9 @@ def read_frames(params: dict[str, Any]) -> dict[str, Any]:
                 if not line or (row > 0 and not line.strip()):
                     raise ValueError("轨迹末尾存在不完整帧；请等待写入完成后重新打开。")
                 frame_size += len(line)
-                if not index_only:
-                    frame.extend(line)
+                frame.extend(line)
             offsets.append(start)
-            if not index_only:
-                blocks.append(bytes(frame))
+            blocks.append(bytes(frame))
             size += frame_size
             frame_count += 1
         next_offset = stream.tell()

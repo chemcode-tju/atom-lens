@@ -129,7 +129,7 @@
         let n;
         if(this.format==='gromacs') {
           n=count((await this.required()).text);
-          for(let j=0;j<n;j++)await this.required();
+          await this.lines.skipRows(n,false);
           await this.required();
         } else {
           while(row.text==='ITEM: TIME'||row.text==='ITEM: UNITS'){await this.required();row=await this.required();}
@@ -142,7 +142,7 @@
           if(!(await this.required()).text.startsWith('ITEM: BOX BOUNDS'))throw Error('dump 缺少 BOX BOUNDS');
           for(let j=0;j<3;j++)await this.required();
           if(!(await this.required()).text.startsWith('ITEM: ATOMS '))throw Error('dump 缺少 ATOMS 列');
-          for(let j=0;j<n;j++)await this.required();
+          await this.lines.skipRows(n,false);
         }
         this.offsets.push(start);this.ends.push(this.lines.offset);this.count++;
         this.complete=this.lines.offset>=this.file.size;

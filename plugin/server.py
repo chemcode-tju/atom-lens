@@ -1,7 +1,7 @@
 """Dependency-free MCP server for the native Codex file-editor entrypoint."""
 
 # Configuration
-plugin_version = "0.12.0"
+plugin_version = "0.12.1"
 resource_uri = "ui://structure-viewer/editor.html"
 
 from pathlib import Path
@@ -10,6 +10,7 @@ import json
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from cp2k_cell import attach_cell
 from trajectory import read_frames
 from md_import import import_selected
 from snapshot import save_snapshot, snapshot_context
@@ -148,6 +149,7 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
             "description": "Read a bounded batch of complete XYZ, ASE or VASP trajectory frames from the host-selected file.",
             "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
                 "token": {"type": "string"},
+                "cellToken": {"type": "string"}, "cellVersion": {"type": "string"},
                 "offset": {"type": "integer", "minimum": 0},
                 "frameLimit": {"type": "integer", "minimum": 1, "maximum": 4096},
                 "indexOnly": {"type": "boolean"}, "headerOffset": {"type":"integer","minimum":0},
@@ -220,6 +222,10 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": "Read selected structure"}], "structuredContent": result}
     if method == "tools/call" and params.get("name") == "read_trajectory_frames":
         batch = read_frames(selected_paths.bind(params))
+        args = params.get("arguments", {})
+        if "cellToken" in args:
+            cell = selected_paths.bind({"arguments": {"token": args["cellToken"]}})
+            attach_cell(batch, Path(cell["_meta"]["openai/resource"]["path"]), args.get("cellVersion"))
         return {"content": [{"type": "text", "text": f"Read {batch.get('frameCount', 0)} frames"}],
                 "structuredContent": batch}
     if method == "tools/call" and params.get("name") == "structure_media_export":

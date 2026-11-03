@@ -13,13 +13,22 @@ const StructureHostFiles = (() => {
     const file = {
       name:ref.name, size:meta.size,
       topology(){return read({action:"topology"});},
-      async xyzSource(){
+      cellBinding:ref.token?{cellToken:ref.token,cellVersion:meta.version}:null,
+      async xyzSource(cellBinding){
         const batch=async args=>{
-          const reply=await request('tools/call',{name:'read_trajectory_frames',arguments:{...binding,version:meta.version,...args}});
+          const reply=await request('tools/call',{name:'read_trajectory_frames',arguments:{...binding,...cellBinding,version:meta.version,...args}});
           if(reply.isError)throw Error(reply.content?.[0]?.text || 'XYZ read failed');
           return reply.structuredContent;
         };
-        return new StructureTrajectory.HostSource(batch,await batch({offset:0,frameLimit:1}));
+        const first=await batch({offset:0,frameLimit:1});
+        const source=new StructureTrajectory.HostSource(batch,first);
+        const fetchFrame=source.read.bind(source);
+        let seed=first.text;
+        source.read=async index=>{
+          if(index!==0 || seed===null)return fetchFrame(index);
+          const text=seed;seed=null;return text;
+        };
+        return source;
       },
       convert(options){return read({action:"convert",...options});},
       slice(start=0,end=meta.size) {

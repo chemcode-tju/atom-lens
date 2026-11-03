@@ -72,7 +72,7 @@ def read_md_index(stream: BinaryIO, fmt: str, offset: int, index_only: bool) -> 
             stream.seek(start)
             text = stream.read(finish - start).decode("utf-8")
             break
-        if len(offsets) >= 4096 or stream.tell() - offset >= 1048576:
+        if len(offsets) >= 4096 or stream.tell() - offset >= 8 * 1048576:
             break
     return dict(offsets=offsets, nextOffset=stream.tell(), eof=stream.tell() == end, text=text)
 
