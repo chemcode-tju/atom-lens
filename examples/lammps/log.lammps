@@ -1,0 +1,4 @@
+# Metadata excerpt for the water example
+units real
+atom_style atomic
+boundary p p p

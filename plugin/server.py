@@ -1,7 +1,7 @@
 """Dependency-free MCP server for the native Codex file-editor entrypoint."""
 
 # Configuration
-plugin_version = "0.11.0"
+plugin_version = "0.11.1"
 resource_uri = "ui://structure-viewer/editor.html"
 
 from pathlib import Path
@@ -15,6 +15,7 @@ from md_import import import_selected
 from snapshot import save_snapshot, snapshot_context
 from local_export import prepare_local_snapshot, snapshot_save_status
 from path_access import StructurePaths
+from trajectory_link import create_link, resolve_link
 from media_export import MediaExports
 
 media_exports = MediaExports()
@@ -80,7 +81,7 @@ def tool_descriptor() -> dict[str, Any]:
         "_meta": {
             "ui": {"resourceUri": resource_uri, "visibility": ["app"]},
             "openai/ui": {"entrypoints": [{"type": "file", "extensions": [
-                ".extxyz", ".xyz", ".traj", ".vasp", ".gro", ".lammpstrj", ".dump", ".data", ".lmp", ".lammps", ".pdb", ".cif"]}]},
+                ".extxyz", ".xyz", ".traj", ".vasp", ".gro", ".lammpstrj", ".dump", ".data", ".lmp", ".lammps", ".pdb", ".cif", ".svtraj"]}]},
         },
     }
 
@@ -115,6 +116,17 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
             "annotations": {"readOnlyHint": True, "openWorldHint": False},
             "_meta": {"ui": {"resourceUri": resource_uri, "visibility": ["app", "model"]},
                       "openai/ui": {"entrypoints": [{"type": "thread"}]}},
+        }, {
+            "name": "create_lammps_link", "title": "Create a clickable LAMMPS trajectory link",
+            "description": "When the user wants a clickable structure link, pass the absolute dump path and explicit data/input/log files from the same run and directory on this host. Creates a small reusable .svtraj beside the dump, without copying or rewriting trajectories. Return its absolute path as a Markdown file link in this host’s chat.",
+            "inputSchema": {"type": "object", "additionalProperties": False, "required": ["path", "companions"],
+                            "properties": {"path": {"type": "string"}, "companions": {"type": "array", "maxItems": 31, "items": {"type": "string"}}}},
+            "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False},
+        }, {
+            "name": "resolve_lammps_link", "title": "Read selected trajectory link",
+            "inputSchema": {"type": "object", "additionalProperties": False, "properties": {"token": {"type": "string"}}},
+            "annotations": {"readOnlyHint": True, "openWorldHint": False},
+            "_meta": {"ui": {"visibility": ["app"]}},
         }, {
             "name": "structure_import", "title": "Read scientific structure",
             "inputSchema": {"type":"object","additionalProperties":False,"required":["action"],"properties":{
@@ -192,6 +204,13 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
             result["file"]["companions"] = [selected_paths.open(path, companion=True)["file"] for path in companions]
         return {"content": [{"type": "text", "text": f"Structure Viewer on {result['host']}"}],
                 "structuredContent": result}
+    if method == "tools/call" and params.get("name") == "create_lammps_link":
+        args = params["arguments"]
+        result = create_link(args["path"], args["companions"])
+        return {"structuredContent": result, "content": [{"type": "text", "text": result["path"]}]}
+    if method == "tools/call" and params.get("name") == "resolve_lammps_link":
+        result = resolve_link(selected_paths, selected_paths.bind(params))
+        return {"structuredContent": result, "content": [{"type": "text", "text": "Opened trajectory link"}]}
     if method == "tools/call" and params.get("name") == "structure_import":
         result = import_selected(selected_paths.bind(params))
         return {"content":[{"type":"text","text":"Read selected structure"}],"structuredContent":result}

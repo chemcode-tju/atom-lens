@@ -1,6 +1,6 @@
 {
   "name": "structure-viewer",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "description": "Read-only structure viewer with switchable themes, on-demand MD trajectories, atom selection and native snapshot export.",
   "author": {
     "name": "liyang-tju"

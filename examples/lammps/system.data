@@ -1,0 +1,19 @@
+Water example
+
+3 atoms
+2 atom types
+
+0 10 xlo xhi
+0 10 ylo yhi
+0 10 zlo zhi
+
+Masses
+
+1 15.999 # O
+2 1.008 # H
+
+Atoms # atomic
+
+1 1 5 5 5
+2 2 5.96 5 5
+3 2 4.76 5.93 5

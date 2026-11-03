@@ -341,5 +341,12 @@
   "本地浏览器读取": "Local browser reader",
   "坐标单位 Å": "Coordinates in Å",
   "当前服务转换": "Converted on the plugin host",
-  "未发送给模型": "Not sent to the model"
+  "未发送给模型": "Not sent to the model",
+  "轨迹链接只接受同目录下的 LAMMPS 文件名。": "Trajectory links only accept LAMMPS files in the same directory.",
+  "轨迹链接文件缺失或为符号链接：{0}": "Missing or symbolic link member: {0}",
+  "无效的 Structure Viewer 轨迹链接。": "Invalid Structure Viewer trajectory link.",
+  "轨迹链接最多支持 31 个配套文件。": "Trajectory links support up to 31 companions.",
+  "轨迹链接包含重复文件。": "Duplicate file in the trajectory link.",
+  "宿主没有提供轨迹链接路径，请在对应主机的查看器中按路径打开。": "The host did not supply a link path. Open the link by path in the viewer on the host that owns it.",
+  "轨迹链接过大。": "The trajectory link is too large."
 }

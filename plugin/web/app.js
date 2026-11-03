@@ -176,7 +176,7 @@ async function showDocument(store,generation) {
     .catch(error=>{if(doc===store)status(`加载停止：${error.message}（保留已加载的 ${store.count} 帧）`,true);}));
 }
 async function loadFile(file, reload = false) {
-  if (!file?.resourceUri || (!reload && fileRef?.resourceUri === file.resourceUri && (doc || loading))) return;
+  if (!file?.resourceUri || (!reload && (fileRef?.resourceUri === file.resourceUri || fileRef?.linkUri === file.resourceUri) && (doc || loading))) return;
   pickedFile=false; binaryTrajectory=/\.traj$/i.test(file.name); clearFollow(); resetDisplayState();
   const generation = ++readGeneration;
   stop(); loading = true; streamComplete = false;
@@ -184,6 +184,15 @@ async function loadFile(file, reload = false) {
   $("source-toggle").hidden = binaryTrajectory; $("source-panel").hidden = true;
   $("filename").removeAttribute("data-empty-title"); $("filename").textContent = file.name; $("import-note").textContent=""; status("正在读取第一帧…");
   try {
+    const linkedTrajectory = /\.svtraj$/i.test(file.name);
+    if (linkedTrajectory) {
+      const reply = await request('tools/call', {name:'resolve_lammps_link', arguments:file.token?{token:file.token}:{}});
+      if (generation!==readGeneration) return;
+      if (!reply.structuredContent?.file) throw Error(reply.content?.[0]?.text || '无效的 Structure Viewer 轨迹链接。');
+      file = {...reply.structuredContent.file, linkUri:file.resourceUri};
+      fileRef = file;
+      $("filename").textContent = file.name;
+    }
     if(!/^(POSCAR|CONTCAR|XDATCAR)$|\.(xyz|extxyz|traj|vasp)$/i.test(file.name) || file.companions?.length) {
       const files=await Promise.all([file,...(file.companions||[])].map(StructureHostFiles.open));
       if(generation!==readGeneration)return;
@@ -193,7 +202,7 @@ async function loadFile(file, reload = false) {
         if (!part) throw Error('Codex 未返回文件内容');
         files[0]=new File([part.text ?? Uint8Array.from(atob(part.blob),c=>c.charCodeAt(0))],file.name);
       }
-      const imported=await StructureImport.open(files,{format:$("import-format").value});
+      const imported=await StructureImport.open(files,{format:linkedTrajectory ? "lammps-dump-text" : $("import-format").value});
       await showDocument(imported.store,generation);
       if(generation===readGeneration)showImportNote(imported.note);
       return;
@@ -333,7 +342,7 @@ $("drift-apply").onclick=async()=>{
   }catch(error){$("drift-error").textContent=error.message;}finally{$("drift-apply").disabled=false;}
 };
 $("source-toggle").onclick = () => { stop(); $("source-panel").hidden = !$("source-panel").hidden; if(doc)$("source").value=activeRecord.text; };
-request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.11.0" }, appCapabilities: {} })
+request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.11.1" }, appCapabilities: {} })
   .then(() => { send("ui/notifications/initialized", {}); status("已连接，等待文件…"); })
   .catch(error => status(`连接失败：${error.message}`, true));
 

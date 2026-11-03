@@ -27,8 +27,9 @@ class StructurePaths:
         if not isinstance(value, str) or not Path(value).expanduser().is_absolute():
             raise ValueError("请输入当前主机上的完整绝对路径。")
         path = Path(value).expanduser()
-        known_companion = companion and (path.name.startswith(("in.", "log.", "data.")) or path.suffix.lower() in {".in", ".inp", ".log"})
-        if not known_companion and not path.name.startswith(("data.", "dump.")) and path.name.upper() not in {"POSCAR", "CONTCAR", "XDATCAR"} and path.suffix.lower() not in {".xyz", ".extxyz", ".traj", ".vasp", ".gro", ".lammpstrj", ".dump", ".lammps", ".lmp", ".data", ".pdb", ".cif"}:
+        name = path.name.lower()
+        known_companion = companion and (name in {"in", "log", "data"} or name.startswith(("in.", "log.", "data.", "in_", "log_", "data_", "in-", "log-", "data-")) or path.suffix.lower() in {".in", ".inp", ".log"})
+        if not known_companion and name not in {"dump", "data"} and not name.startswith(("data.", "dump.", "dump_", "dump-")) and path.name.upper() not in {"POSCAR", "CONTCAR", "XDATCAR"} and path.suffix.lower() not in {".xyz", ".extxyz", ".traj", ".vasp", ".gro", ".lammpstrj", ".dump", ".lammps", ".lmp", ".data", ".pdb", ".cif", ".svtraj"}:
             raise ValueError("不支持该结构文件名。")
         try:
             resolved = path.resolve(strict=True)
