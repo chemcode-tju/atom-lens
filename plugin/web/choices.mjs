@@ -71,6 +71,14 @@ function draw() {
     row.setAttribute("aria-disabled", String(option.disabled || (group instanceof HTMLOptGroupElement && group.disabled)));
     row.dataset.index = option.index;
     row.textContent = option.label;
+    if (option.dataset.shortcut) {
+      row.classList.add("with-shortcut");
+      row.setAttribute("aria-label", option.getAttribute("aria-label") || option.label);
+      const badge = document.createElement("kbd");
+      badge.className = "view-shortcut";
+      badge.textContent = option.dataset.shortcut;
+      row.append(badge);
+    }
     contents.push(row);
   }
   menu.replaceChildren(...contents);

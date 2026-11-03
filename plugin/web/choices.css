@@ -24,3 +24,13 @@ html .chat-model-picker select,html .map-board .map-subtools select { background
 .choice-menu [aria-selected=true]::after { content:""; position:absolute; right:12px; top:50%; width:8px; height:4px; border:solid currentColor; border-width:0 0 1.5px 1.5px; transform:translateY(-65%) rotate(-45deg); }
 .choice-menu [aria-disabled=true],.choice-group { color:var(--faint); cursor:default; }
 .choice-group { font-size:12px; }
+
+.orientation-control { position:relative; display:inline-flex; }
+.orientation-control #orientation { min-width:96px; }
+.view-shortcut {
+  pointer-events:none; padding:0 4px; border:1px solid var(--strong-border); border-radius:4px;
+  color:var(--muted); background:var(--subtle); font:500 10px/14px var(--font-ui); white-space:nowrap;
+}
+.orientation-control .view-shortcut { position:absolute; right:27px; bottom:4px; }
+.choice-menu [role=option].with-shortcut { display:flex; align-items:center; gap:16px; }
+.with-shortcut .view-shortcut { margin-left:auto; align-self:flex-end; transform:translateY(2px); }

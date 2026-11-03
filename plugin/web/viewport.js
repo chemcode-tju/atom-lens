@@ -197,11 +197,16 @@ class StructureViews {
       if((gesture||event.shiftKey)&&!event.target.closest('button'))stop(event);
     },true);
   }
-  title(preset) { return {xy: "Top · XY", bottom: "Bottom · XY", xz: "Front · XZ", back: "Back · XZ", yz: "Left · YZ", right: "Right · YZ", perspective: "Perspective"}[preset]; }
+  title(preset) { return {xy: "XY", bottom: "XY", xz: "XZ", back: "XZ", yz: "YZ", right: "YZ", perspective: "Perspective"}[preset]; }
   activate(index) {
     this.active = index;
     this.panes.forEach((pane, i) => pane.element.classList.toggle("active", i === index));
-    document.getElementById("orientation").value = this.panes[index].preset;
+    const orientation = document.getElementById("orientation");
+    orientation.value = this.panes[index].preset;
+    const shortcut = orientation.selectedOptions[0]?.dataset.shortcut;
+    const badge = document.getElementById("orientation-key");
+    badge.textContent = shortcut || "";
+    badge.hidden = !shortcut;
   }
   setLayout(layout) {
     this.layout = layout;
