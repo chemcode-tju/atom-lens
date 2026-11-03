@@ -197,7 +197,7 @@ class StructureViews {
       if((gesture||event.shiftKey)&&!event.target.closest('button'))stop(event);
     },true);
   }
-  title(preset) { return {xy: "XY", bottom: "XY", xz: "XZ", back: "XZ", yz: "YZ", right: "YZ", perspective: "Perspective"}[preset]; }
+  title(preset) { return document.querySelector(`#orientation option[value="${preset}"]`).label; }
   activate(index) {
     this.active = index;
     this.panes.forEach((pane, i) => pane.element.classList.toggle("active", i === index));

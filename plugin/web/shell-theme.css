@@ -128,7 +128,7 @@ body:not(.has-structure) .viewport { visibility:hidden; }
 #open-empty .icon { width:16px; height:16px; }
 .has-structure #open-empty { display:none; }
 
-.viewport .view-title { min-height:22px; padding:1px 7px; border:0; border-radius:6px; background:rgb(255 255 255 / 88%); color:#252a31; font:500 12px/20px var(--font-ui); }
+.viewport .view-title { min-height:20px; padding:1px 6px; border:0; border-radius:6px; background:rgb(255 255 255 / 88%); color:#252a31; font:500 11px/18px var(--font-ui); }
 
 /* The viewport takes the remaining height in both the dock and the standalone viewer. */
 main,.embedded-viewer main { height:100dvh; min-height:100dvh; overflow:auto; }

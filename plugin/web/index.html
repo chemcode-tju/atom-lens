@@ -41,12 +41,12 @@
           <button type="button" id="last" aria-label="最后一帧" title="最后一帧"><svg class="icon" aria-hidden="true"><use href="#i-last"/></svg></button>
           <button type="button" id="playback-settings" aria-label="播放设置" title="播放设置"><svg class="icon" aria-hidden="true"><use href="#i-speed"/></svg></button></div>
           <div class="view-controls"><span class="orientation-control"><select id="orientation" aria-label="视图方向">
-            <option value="xy" data-shortcut="Z" aria-label="XY (+Z)">XY</option>
-            <option value="bottom" data-shortcut="⌥Z" aria-label="XY (−Z)">XY</option>
-            <option value="back" data-shortcut="Y" aria-label="XZ (+Y)">XZ</option>
-            <option value="xz" selected data-shortcut="⌥Y" aria-label="XZ (−Y)">XZ</option>
-            <option value="right" data-shortcut="X" aria-label="YZ (+X)">YZ</option>
-            <option value="yz" data-shortcut="⌥X" aria-label="YZ (−X)">YZ</option>
+            <option value="xy" data-shortcut="Z" aria-label="Top · XY (+Z)">Top · XY</option>
+            <option value="bottom" data-shortcut="⌥Z" aria-label="Bottom · XY (−Z)">Bottom · XY</option>
+            <option value="back" data-shortcut="Y" aria-label="Back · XZ (+Y)">Back · XZ</option>
+            <option value="xz" selected data-shortcut="⌥Y" aria-label="Front · XZ (−Y)">Front · XZ</option>
+            <option value="right" data-shortcut="X" aria-label="Right · YZ (+X)">Right · YZ</option>
+            <option value="yz" data-shortcut="⌥X" aria-label="Left · YZ (−X)">Left · YZ</option>
             <option value="perspective">Perspective</option>
           </select><kbd id="orientation-key" class="view-shortcut" aria-hidden="true">⌥Y</kbd></span><select id="layout" aria-label="视图布局"><option value="single">单视图</option><option value="dual">双视图</option><option value="quad">四视图</option></select></div>
           <div class="navigation" role="group" aria-label="视图操作"><button type="button" id="rotate" data-mode-button="rotate" aria-pressed="true" aria-label="旋转" title="旋转"><svg class="icon" aria-hidden="true"><use href="#i-rotate"/></svg></button>

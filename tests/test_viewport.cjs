@@ -60,7 +60,7 @@ console.log('Selection updates preserve the atom model and camera, including cle
    addEventListener:(name,fn)=>{(handlers[name]??=[]).push(fn);},setPointerCapture:()=>{}};
  let resizeCallback;
  const fakeViewer={setViewChangeCallback:()=>{},resize:()=>resizes.push([canvas.clientWidth,canvas.clientHeight]),render:()=>paints.push(1),translateScene:(dx,dy)=>translations.push([dx,dy])};
- global.document={createElement:tag=>tag==='section'?element:{}};
+ global.document={createElement:tag=>tag==='section'?element:{},querySelector:()=>({label:'Front · XZ'})};
  global.$3Dmol={createViewer:()=>fakeViewer};
  global.ResizeObserver=class {constructor(callback){resizeCallback=callback;}observe(){}};
  const interaction=Object.create(StructureViews.prototype);
