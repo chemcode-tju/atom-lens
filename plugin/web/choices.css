@@ -26,13 +26,14 @@ html .chat-model-picker select,html .map-board .map-subtools select { background
 .choice-group { font-size:12px; }
 
 .orientation-control { position:relative; display:inline-flex; }
-.orientation-control #orientation { width:120px; min-height:28px; padding:4px 43px 4px 7px; font-size:12px; line-height:18px; background-position:right 5px center; }
-.choice-menu:has(.with-shortcut) { font-size:12px; line-height:16px; }
-.choice-menu:has(.with-shortcut) [role=option] { padding:5px 26px 5px 8px; }
+.view-controls :is(#orientation,#layout) { min-height:28px; padding:4px 24px 4px 7px; font-size:12px; line-height:18px; background-position:right 5px center; }
+.view-controls #orientation { width:120px; padding-right:43px; }
+.view-controls-menu { font-size:12px; line-height:16px; }
+.view-controls-menu [role=option] { padding:5px 26px 5px 8px; }
 .view-shortcut {
   pointer-events:none; padding:0 4px; border:1px solid var(--strong-border); border-radius:4px;
   color:var(--muted); background:var(--subtle); font:500 9px/12px var(--font-ui); white-space:nowrap;
 }
-.orientation-control .view-shortcut { position:absolute; right:21px; bottom:4px; }
+.orientation-control .view-shortcut { position:absolute; right:21px; top:50%; transform:translateY(-50%); }
 .choice-menu [role=option].with-shortcut { display:flex; align-items:center; gap:12px; }
-.with-shortcut .view-shortcut { margin-left:auto; align-self:flex-end; transform:translateY(2px); }
+.with-shortcut .view-shortcut { margin-left:auto; }

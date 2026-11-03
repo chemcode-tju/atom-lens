@@ -93,6 +93,7 @@ function open(select) {
   const observer = new MutationObserver(() => { if (current?.select === select) draw(); });
   const resize = new ResizeObserver(place);
   current = {select, observer, resize, search:"", searchTime:0};
+  menu.classList.toggle("view-controls-menu", Boolean(select.closest(".view-controls")));
   const label = select.getAttribute("aria-label") || select.title ||
     Array.from(select.labels || [], el => el.innerText.split("\n")[0]).join(" ");
   menu.setAttribute("aria-label", label || (document.documentElement.lang === "en" ? "Options" : "选项"));
