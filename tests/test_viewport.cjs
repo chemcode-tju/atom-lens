@@ -6,6 +6,17 @@ close(projectToView([1,0,0], viewQuaternions.xz), [1,0,0]);
 close(projectToView([0,0,1], viewQuaternions.xz), [0,1,0]);
 close(projectToView([0,1,0], viewQuaternions.yz), [-1,0,0]);
 close(projectToView([0,0,1], viewQuaternions.yz), [0,1,0]);
+// The viewing axis points towards the camera (+screen Z). Keep world Z
+// upright in side views and world Y upright in top/bottom views.
+const {axisShortcut}=require('../plugin/web/viewport.js');
+for(const [i,key] of ['KeyX','KeyY','KeyZ'].entries())for(const reverse of [false,true]){
+  const preset=axisShortcut({code:key,altKey:reverse,key:reverse?'≈':key.slice(-1)});
+  const eye=[0,0,0];eye[i]=reverse?-1:1;
+  close(projectToView(eye,viewQuaternions[preset]),[0,0,1]);
+  close(projectToView(i===2?[0,1,0]:[0,0,1],viewQuaternions[preset]),[0,1,0]);
+}
+for(const ignored of [{metaKey:true},{ctrlKey:true},{isComposing:true},{repeat:true},{target:{closest:()=>true}}])
+  assert.equal(axisShortcut({code:'KeyX',...ignored}),undefined);
 const frame = [10,10,45];
 close(projectToView(frame, viewQuaternions.yz), [-10,45,-10]);
 assert.equal(radius('H'), .46);
@@ -45,7 +56,7 @@ console.log('Selection updates preserve the atom model and camera, including cle
  const canvas={clientWidth:400,clientHeight:600};
  const layer={querySelector:()=>({hidden:true,style:{}}),addEventListener:()=>{},setPointerCapture:()=>{},getBoundingClientRect:()=>({left:0,top:0})};
  const title={};
- const element={hidden:false,querySelector:selector=>selector==='.view-canvas'?canvas:selector==='.pointer-layer'?layer:title,
+ const element={hidden:false,focus(){},querySelector:selector=>selector==='.view-canvas'?canvas:selector==='.pointer-layer'?layer:title,
    addEventListener:(name,fn)=>{(handlers[name]??=[]).push(fn);},setPointerCapture:()=>{}};
  let resizeCallback;
  const fakeViewer={setViewChangeCallback:()=>{},resize:()=>resizes.push([canvas.clientWidth,canvas.clientHeight]),render:()=>paints.push(1),translateScene:(dx,dy)=>translations.push([dx,dy])};

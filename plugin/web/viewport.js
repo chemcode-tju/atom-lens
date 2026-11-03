@@ -1,5 +1,17 @@
 "use strict";
-const viewQuaternions = {xy: [0, 0, 0, 1], xz: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2], yz: [-0.5, 0.5, 0.5, 0.5], perspective: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2]};
+const viewQuaternions = {
+  xy:[0,0,0,1], bottom:[0,1,0,0],
+  xz:[-Math.SQRT1_2,0,0,Math.SQRT1_2], back:[0,Math.SQRT1_2,Math.SQRT1_2,0],
+  yz:[-0.5,0.5,0.5,0.5], right:[-0.5,-0.5,-0.5,0.5],
+  perspective:[-Math.SQRT1_2,0,0,Math.SQRT1_2],
+};
+const axisViews={KeyX:["right","yz"],KeyY:["back","xz"],KeyZ:["xy","bottom"]};
+function axisShortcut(event) {
+  // Option can produce a different character on macOS; code identifies the key.
+  if(event.defaultPrevented||event.isComposing||event.repeat||event.metaKey||event.ctrlKey||event.shiftKey)return;
+  if(event.target?.isContentEditable||event.target?.closest?.("input,textarea,select,dialog,[role=textbox],[role=listbox]"))return;
+  return axisViews[event.code]?.[event.altKey?1:0];
+}
 function projectToView([a,b,c], [x,y,z,w]) {
   // Match the renderer's model matrix (3Dmol Vector3.applyQuaternion uses its inverse).
   return [(1-2*(y*y+z*z))*a + 2*(x*y-z*w)*b + 2*(x*z+y*w)*c,
@@ -26,6 +38,7 @@ class StructureViews {
   createPane(preset, index) {
     const element = document.createElement("section");
     element.className = "viewport";
+    element.tabIndex = -1;
     element.innerHTML = '<button class="view-title" type="button"></button><div class="view-canvas"></div><div class="pointer-layer"><div class="selection-rectangle" hidden></div></div><div class="selection-rectangle shortcut-rectangle" hidden></div><svg class="axis-gizmo" viewBox="0 0 78 78" aria-label="坐标轴"></svg>';
     this.container.append(element);
     const canvas = element.querySelector(".view-canvas");
@@ -35,7 +48,10 @@ class StructureViews {
     element.querySelector(".view-title").textContent = this.title(preset);
     element.querySelector(".view-title").onclick = () => this.activate(index);
     element.querySelector(".view-title").ondblclick = () => { this.activate(index); this.toggleExpand(); };
-    element.addEventListener("pointerdown", () => { this.commitResize(pane); this.activate(index); }, true);
+    element.addEventListener("pointerdown", event => {
+      if(!event.target.closest("button"))element.focus({preventScroll:true});
+      this.commitResize(pane); this.activate(index);
+    }, true);
     element.addEventListener("mousedown", () => this.activate(index), true);
     viewer.setViewChangeCallback(() => { this.drawAxes(pane); this.drawSelection(pane); });
     // Own resize scheduling; the pinned renderer's automatic listeners are
@@ -181,7 +197,7 @@ class StructureViews {
       if((gesture||event.shiftKey)&&!event.target.closest('button'))stop(event);
     },true);
   }
-  title(preset) { return {xy: "Top · XY", xz: "Front · XZ", yz: "Left · YZ", perspective: "Perspective"}[preset]; }
+  title(preset) { return {xy: "Top · XY", bottom: "Bottom · XY", xz: "Front · XZ", back: "Back · XZ", yz: "Left · YZ", right: "Right · YZ", perspective: "Perspective"}[preset]; }
   activate(index) {
     this.active = index;
     this.panes.forEach((pane, i) => pane.element.classList.toggle("active", i === index));
@@ -438,4 +454,4 @@ class StructureViews {
     }
   }
 }
-if (typeof module !== "undefined" && module.exports) module.exports = {projectToView, viewQuaternions, StructureViews, labelScreenScale};
+if (typeof module !== "undefined" && module.exports) module.exports = {projectToView, viewQuaternions, StructureViews, labelScreenScale, axisShortcut};
