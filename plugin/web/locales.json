@@ -271,6 +271,7 @@
   "返回研究空间": "Back to workspace",
   "登录已过期，请返回 Chem Code 重新登录。": "Session expired. Sign in to Chem Code again.",
   "文件格式与导入选项": "File format and import options",
+  "界面设置": "Interface settings",
   "查看选项": "View options",
   "自动识别": "Detect automatically",
   "选择结构文件开始查看；LAMMPS 支持多选或一起拖入配套文件。": "Open a structure file. For LAMMPS, select or drop the trajectory and its companion files together.",

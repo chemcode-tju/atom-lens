@@ -3,26 +3,28 @@
 <script>/*__THEME_JS__*/</script><style>/*__THEME_CSS__*/</style><style>/*__STYLE__*/</style><style>/*__SHELL_THEME__*/</style><style>/*__CHOICES_CSS__*/</style></head>
 <body><!--__ICON_SPRITE__-->
 <main>
-  <header><h1 id="filename" data-empty-title>结构与轨迹</h1><div class="file-actions"><button id="open-path"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>按路径打开</button><button id="open-file"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>本地文件</button><input id="file-picker" type="file" multiple hidden></div></header>
+  <header><h1 id="filename" data-empty-title>结构与轨迹</h1><div class="file-actions"><button id="open-path"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>按路径打开</button><button id="open-file"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>本地文件</button><input id="file-picker" type="file" multiple hidden></div>
+    <details id="interface-settings"><summary title="界面设置" aria-label="界面设置"><svg class="icon" aria-hidden="true"><use href="#i-settings"/></svg></summary>
+      <div class="settings-fields"><label>主题 <select id="theme-mode"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label><label>界面字号 <select id="theme-size"><option value="14">14</option><option value="16">16</option><option value="18">18</option><option value="20">20</option></select></label>
+    <label class="language-control" data-no-i18n>Language <select id="language" aria-label="Language"><option value="zh-CN">简体中文</option><option value="en">English</option></select></label></div>
+    </details>
+  </header>
   <details id="viewer-options"><summary>查看选项</summary>
     <div class="viewer-option-body">
       <div class="file-actions"><button id="display-settings"><svg class="icon" aria-hidden="true"><use href="#i-appearance"/></svg>显示设置</button><button id="drift-settings" disabled><svg class="icon" aria-hidden="true"><use href="#i-drift"/></svg>质心漂移校正</button><button id="snapshot"><svg class="icon" aria-hidden="true"><use href="#i-snapshot"/></svg>快照</button><button id="animation-export"><svg class="icon" aria-hidden="true"><use href="#i-timeline"/></svg>导出动画</button><button id="source-toggle"><svg class="icon" aria-hidden="true"><use href="#i-software"/></svg>源码</button></div>
       <div class="toolbar">
-    <label>主题 <select id="theme-mode"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label><label>界面字号 <select id="theme-size"><option value="14">14</option><option value="16">16</option><option value="18">18</option><option value="20">20</option></select></label>
-    <label class="language-control" data-no-i18n>Language <select id="language" aria-label="Language"><option value="zh-CN">简体中文</option><option value="en">English</option></select></label>
+    <label>格式 <select id="import-format"><option value="auto">自动识别</option><option value="extxyz">XYZ / extxyz</option><option value="vasp">POSCAR / CONTCAR</option><option value="vasp-xdatcar">XDATCAR</option><option value="lammps-dump-text">LAMMPS dump（文本）</option><option value="lammps-data">LAMMPS data</option><option value="gromacs">GROMACS GRO</option><option value="proteindatabank">PDB</option><option value="cif">CIF</option></select></label>
     <select id="style" aria-label="显示方式"><option value="sphere">原子球</option><option value="ballstick">球棍</option><option value="stick">线棒</option></select>
     <select id="palette" aria-label="原子配色"><option value="jmol">Jmol</option><option value="rasmol">RasMol / CPK</option><option value="vesta">VESTA</option></select>
     <select id="radius-scale" aria-label="原子半径比例" title="原子半径比例"><option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.25">125%</option></select>
     <label><input id="cell" type="checkbox" checked>晶胞</label><label><input id="labels" type="checkbox">序号</label><label><input id="hbonds" type="checkbox">氢键</label><label><input id="wrap" type="checkbox">Wrap</label>
   </div>
-      <label>格式 <select id="import-format"><option value="auto">自动识别</option><option value="extxyz">XYZ / extxyz</option><option value="vasp">POSCAR / CONTCAR</option><option value="vasp-xdatcar">XDATCAR</option><option value="lammps-dump-text">LAMMPS dump（文本）</option><option value="lammps-data">LAMMPS data</option><option value="gromacs">GROMACS GRO</option><option value="proteindatabank">PDB</option><option value="cif">CIF</option></select></label>
-      <p id="import-note" role="status"></p>
     </div>
   </details>
   <div id="status" role="alert" hidden></div>
   <div id="viewports" class="viewports" data-layout="single" data-mode="rotate"><button id="open-empty" type="button"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>打开结构文件</button></div>
 
-  <section id="source-panel" hidden><div class="section-head"><strong id="source-title">当前帧源码</strong></div><textarea id="source" readonly spellcheck="false" aria-label="当前结构源码"></textarea></section>
+  <section id="source-panel" hidden><div class="section-head"><strong id="source-title">当前帧源码</strong></div><p id="import-note"></p><textarea id="source" readonly spellcheck="false" aria-label="当前结构源码"></textarea></section>
   <footer>
     <details id="trajectory-tools">
       <summary><svg class="icon" aria-hidden="true"><use href="#i-timeline"/></svg><span>轨迹与视图</span><span id="selected-summary" hidden></span><span id="frame-summary" data-no-i18n></span><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></summary>

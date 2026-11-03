@@ -342,7 +342,7 @@ $("drift-apply").onclick=async()=>{
   }catch(error){$("drift-error").textContent=error.message;}finally{$("drift-apply").disabled=false;}
 };
 $("source-toggle").onclick = () => { stop(); $("source-panel").hidden = !$("source-panel").hidden; if(doc)$("source").value=activeRecord.text; };
-request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.11.1" }, appCapabilities: {} })
+request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.11.2" }, appCapabilities: {} })
   .then(() => { send("ui/notifications/initialized", {}); status("已连接，等待文件…"); })
   .catch(error => status(`连接失败：${error.message}`, true));
 
@@ -365,7 +365,6 @@ async function openStructure(files, format = $("import-format").value) {
   $("frame-total").textContent = "—"; $("frame-summary").textContent = ""; $("timeline").disabled = true;
   $("source-panel").hidden = true; $("source-toggle").hidden = /\.traj$/i.test(file.name);
   $("filename").removeAttribute("data-empty-title"); $("filename").textContent = file.name; $("import-note").textContent=""; status("");
-  $("import-note").textContent = "正在读取…";
   try {
     const imported = await StructureImport.open(files, {format});
     if (generation !== readGeneration) { imported.store.dispose(); return; }
@@ -379,7 +378,6 @@ async function openStructure(files, format = $("import-format").value) {
     if (generation !== readGeneration) return;
     discardDocument();
     status(error.message, true);
-    $("import-note").textContent = "读取失败，请检查文件或导入选项后重新选择。";
     return {name: file.name, error: error.message};
   } finally { if (generation === readGeneration) loading = false; }
 }
@@ -461,6 +459,18 @@ $("path-load").onclick=async()=>{
 };
 $("structure-path").onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();$("path-load").click();}};
 
+const interfaceSettings = $("interface-settings");
+document.addEventListener("pointerdown", event => {
+  if (interfaceSettings.open && !interfaceSettings.contains(event.target) && !event.target.closest("#chem-choice-menu")) {
+    interfaceSettings.open = false;
+  }
+});
+window.addEventListener("keydown", event => {
+  if (event.key === "Escape" && interfaceSettings.open && !document.querySelector("#chem-choice-menu")) {
+    interfaceSettings.open = false;
+    interfaceSettings.querySelector("summary").focus();
+  }
+});
 const themeControls = {mode: $("theme-mode"), fontSize: $("theme-size")};
 function syncThemeControls() {
   const settings = chemistryTheme.read();
