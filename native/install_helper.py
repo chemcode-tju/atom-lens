@@ -24,12 +24,13 @@ def main() -> None:
         executable.parent.mkdir(parents=True)
         resources = contents / "Resources"
         resources.mkdir()
-        shutil.copy2(root / "connection.py", resources)
+        for filename in ("connection.py", "broker.py"):
+            shutil.copy2(root / filename, resources)
         for filename in ("snapshot_queue.py", "local_export.py"):
             shutil.copy2(root.parent / "plugin" / filename, resources)
         subprocess.run(["/usr/bin/xcrun", "clang", "-fobjc-arc", "-fblocks", str(root / "SnapshotSaver.m"), "-o", str(executable), "-framework", "Cocoa", "-framework", "UniformTypeIdentifiers"], check=True)
         info = {"CFBundleName": "Structure Snapshot Saver", "CFBundleIdentifier": label,
-                "CFBundleExecutable": executable.name, "CFBundlePackageType": "APPL", "CFBundleVersion": "5", "LSUIElement": True}
+                "CFBundleExecutable": executable.name, "CFBundlePackageType": "APPL", "CFBundleVersion": "6", "LSUIElement": True}
         (contents / "Info.plist").write_bytes(plistlib.dumps(info))
         subprocess.run(["/usr/bin/codesign", "--force", "--sign", "-", str(staged)], check=True)
         agent.parent.mkdir(parents=True, exist_ok=True)
@@ -57,7 +58,7 @@ def main() -> None:
                 agent.write_bytes(old_agent)
                 subprocess.run(["launchctl", "bootstrap", domain, str(agent)], check=False)
             raise
-    print(f"Installed helper: {app}\nLogin agent: {agent}\n菜单栏 → 结构快照 → SSH 连接设置…")
+    print(f"Installed helper: {app}\nLogin agent: {agent}\n菜单栏 → 结构快照 → 服务器")
 
 
 if __name__ == "__main__":

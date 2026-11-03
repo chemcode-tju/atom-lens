@@ -1,7 +1,10 @@
 """Local SSH profile discovery and installation for Structure Snapshot Saver."""
+from __future__ import annotations
+
 # Configuration
 default_queue = "~/.local/share/structure-viewer/snapshot-queue.pyz"
 
+import fcntl
 import glob
 import io
 import json
@@ -96,6 +99,27 @@ print(target)
 """
 
 
+def read_profiles(path: Path) -> list[dict]:
+    """Also read a 0.13.0 single-host profile without requiring a migration step."""
+    if not path.exists():
+        return []
+    data = json.loads(path.read_text())
+    return data["profiles"] if "profiles" in data else [data]
+
+
+def update_profile(config: str, host: str, profile: dict | None) -> None:
+    path = settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with (path.parent / "profiles.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        profiles = [p for p in read_profiles(path) if (p["config"],p["host"])!=(config,host)]
+        if profile is not None:
+            profiles.append(profile)
+        with tempfile.NamedTemporaryFile(mode="w",dir=path.parent,delete=False) as temporary:
+            json.dump({"profiles":profiles},temporary,ensure_ascii=False)
+        Path(temporary.name).replace(path)
+
+
 def configure(request: dict, source: Path) -> dict:
     config = str(Path(request["config"]).expanduser())
     host = request["host"].strip()
@@ -112,11 +136,7 @@ def configure(request: dict, source: Path) -> dict:
     if not absolute.startswith("/"):
         raise ValueError("服务器未返回脚本的绝对路径")
     settings = {"host": host, "config": config, "queue": remote_path, "installed": absolute}
-    target = settings_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(mode="w", dir=target.parent, delete=False) as temporary:
-        json.dump(settings, temporary, ensure_ascii=False)
-    Path(temporary.name).replace(target)
+    update_profile(config, host, settings)
     return settings
 
 
@@ -127,6 +147,9 @@ def main() -> None:
         if not config.is_file():
             raise ValueError("找不到 SSH 配置文件")
         result = host_aliases(config)
+    elif request["action"] == "remove":
+        update_profile(request["config"],request["host"],None)
+        result = {}
     elif request["action"] == "install":
         result = configure(request, Path(__file__).resolve().parent)
     else:

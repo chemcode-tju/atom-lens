@@ -115,7 +115,7 @@
 - 播放设置含 fps、倍速、每 N 帧与循环。默认 60 fps × 1，渲染跟不上时跳帧。
 - 快照保留当前视图的元素显隐、局部样式、氢键、编号及光影；不包含临时选择高亮与测量连线、工具栏或坐标轴。PNG 支持透明背景，JPEG/PDF 白底，可裁去四周空白，DPI 96/150/300/600。PDF 内嵌栅格图。
 - 0.7.0 快照目的地：本地 Mac 插件弹出 macOS 原生文件夹选择窗口（可取消），随后保存图片；nd3 等服务器默认保存到结构文件本身所在目录，可输入另一个已存在的绝对目录。同名自动追加序号，不覆盖文件，不再创建 `structure-snapshots/` 子目录。
-- 在远程聊天里选“保存到 Mac”时，Structure Snapshot Saver 通过选定的 SSH 主机接收导出，在 Mac 弹出系统保存窗口。助手一次连接一个 SSH 主机，不监听网络端口。服务器端暂存请求，Mac 上选择的路径不会回传。
+- 在远程聊天里选“保存到 Mac”时，Structure Snapshot Saver 通过选定的 SSH 主机接收导出，在 Mac 弹出系统保存窗口。助手可同时接收多个远程主机的请求，在 Mac 上依次打开保存窗口。服务器端暂存请求，Mac 上选择的路径不会回传。
 - 0.8.0 选择仅更新合批轮廓和测量连线，保留原子模型与相机；信息栏固定高度，尺寸变化不再触发自动适应。
 
 ## 安装
@@ -137,12 +137,13 @@ codex plugin add structure-viewer@atomic-structure-tools
 python3 native/install_helper.py
 ```
 
-1. 打开 Mac 菜单栏的「结构快照 → SSH 连接设置…」。默认读取 `~/.ssh/config`，也可以选择另一份 OpenSSH 配置文件。
-2. 从列表选择与远程聊天对应的主机别名，或直接填入别名。列表识别 `Include` 文件中的具体别名。实际连接由系统 OpenSSH 处理，包括用户、端口、密钥及跳板机。该别名应已在终端连接过，并能以非交互方式登录。
-3. 保留默认远程脚本路径 `~/.local/share/structure-viewer/snapshot-queue.pyz`，或填写自选的绝对路径（也支持 `~/`）。点击「安装脚本并连接」。助手会把队列程序和依赖一起上传，远端只需要 Python 3.9 或以上。切换服务器时重新打开该设置即可。
-4. 菜单栏显示所选别名后，在远程查看器选「快照 → 保存到：本地 Mac」。系统保存窗口在 Mac 上弹出，服务器安装 Structure Viewer 的步骤仍按下节执行。
+在 **Codex 远程聊天** 打开结构后，直接选择「快照／导出动画 → 保存到：本地 Mac」。助手在 Mac 上识别 Codex 活跃的 OpenSSH 主机，沿用其主机别名、端口、跳板和认证配置，并使用远程查看器已安装的队列程序。多个远程聊天可同时使用。菜单栏「结构快照 → 服务器」列出各台主机的状态。每台远程机器仍需安装 Structure Viewer。
 
-助手安装到 `~/Applications/Structure Snapshot Saver.app`，由 `~/Library/LaunchAgents/org.structure-viewer.snapshot-saver.plist` 在登录时启动。本机保存配置于 `~/Library/Application Support/Structure Viewer/connection.json`，记录 SSH 配置路径、主机别名和部署路径。升级旧助手后首次选择自己的 SSH 主机并安装脚本。卸载时可退出助手、移除登录项和 App；远程脚本也可单独移除。
+当前 Codex 桌面端的 SSH 默认关闭连接共享。此时助手为系统保存窗口另开一条非交互 SSH 通道；远程结构读取仍走原聊天连接。助手不会遍历 SSH 配置逐台登录。若服务器不能非交互登录，自动保存通道无法建立。
+
+**可选独立配置**：需要常驻监听某台服务器、自定义配置文件、端口（在 SSH 配置文件中）或队列脚本位置时，从「服务器」选中它，或点「添加独立连接…」。选择配置文件及主机，点击「安装脚本并连接」。每个配置文件与主机别名组合独立保存。移除独立配置后，仍活跃的 Codex 主机会恢复自动发现。旧版保存的主机设置自动保留。
+
+助手位于 `~/Applications/Structure Snapshot Saver.app`，由用户登录项启动。独立配置保存在 `~/Library/Application Support/Structure Viewer/connection.json`。自定义上传的队列程序可单独移除，自动模式直接使用已安装插件中的脚本。
 
 安装后打开本地 `.extxyz` 文件。如果仍然使用内置文本编辑器，在文件的打开方式菜单中选择 **Structure Viewer**；宿主可以记住按扩展名选择的查看器。若新插件未被发现，重新打开聊天或重启桌面端后再试。
 

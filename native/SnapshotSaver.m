@@ -10,6 +10,7 @@
 @property NSComboBox *hostField;
 @property NSTextField *queueField;
 @property NSMenuItem *settingsItem;
+@property NSMenu *hostMenu;
 
 @end
 
@@ -22,17 +23,32 @@
     self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
     [self setStatus:@"结构快照 · 连接中"];
     NSMenu *menu = [NSMenu new]; menu.autoenablesItems = NO;
-    self.settingsItem = [[NSMenuItem alloc] initWithTitle:@"SSH 连接设置…" action:@selector(configure:) keyEquivalent:@""];
+    self.settingsItem = [[NSMenuItem alloc] initWithTitle:@"添加独立连接…" action:@selector(configure:) keyEquivalent:@""];
     self.settingsItem.target = self; [menu addItem:self.settingsItem];
+    self.hostMenu = [NSMenu new];
+    NSMenuItem *hostList = [[NSMenuItem alloc] initWithTitle:@"服务器" action:nil keyEquivalent:@""];
+    hostList.submenu = self.hostMenu; [menu addItem:hostList];
     [menu addItem:[NSMenuItem separatorItem]];
     NSMenuItem *quit = [[NSMenuItem alloc] initWithTitle:@"退出保存助手" action:@selector(quitHelper:) keyEquivalent:@""];
     quit.target = self; [menu addItem:quit]; self.statusItem.menu = menu;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{ [self watch]; });
 }
-- (NSDictionary *)settings {
-    NSString *path = [@"~/Library/Application Support/Structure Viewer/connection.json" stringByExpandingTildeInPath];
-    NSData *data = [NSData dataWithContentsOfFile:path];
-    return data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+- (void)showHosts:(NSArray *)hosts {
+    [self.hostMenu removeAllItems];
+    NSMutableArray *online = [NSMutableArray array];
+    for (NSDictionary *profile in hosts) {
+        BOOL ready = [profile[@"ready"] boolValue];
+        NSString *host = profile[@"host"];
+        if (ready) [online addObject:host];
+        NSString *mode = [profile[@"automatic"] boolValue] ? @"自动" : @"独立配置";
+        NSString *status = ready ? @"已连接" : [profile[@"missing"] boolValue] ? @"未安装查看器" : @"未连接";
+        NSString *title = [NSString stringWithFormat:@"%@ · %@ · %@",host,mode,status];
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:@selector(configure:) keyEquivalent:@""];
+        item.target = self; item.representedObject = profile; [self.hostMenu addItem:item];
+    }
+    NSString *summary = online.count==1 ? online.firstObject :
+        online.count ? [NSString stringWithFormat:@"%lu 台已连接",(unsigned long)online.count] : @"等待远程连接";
+    [self setStatus:[@"结构快照 · " stringByAppendingString:summary]];
 }
 - (id)runSetup:(NSDictionary *)request error:(NSString **)message {
     NSTask *task = [NSTask new]; NSPipe *output = [NSPipe pipe], *input = [NSPipe pipe];
@@ -72,10 +88,12 @@
     alert.informativeText = message; [NSApp activateIgnoringOtherApps:YES]; [alert runModal];
 }
 - (void)configure:(id)sender {
-    NSDictionary *old = [self settings];
-    NSAlert *alert = [NSAlert new]; alert.messageText = @"SSH 连接设置";
-    alert.informativeText = @"选择 Mac 上的 OpenSSH 配置和服务器。应用后会上传保存队列脚本，并连接该服务器。";
+    NSDictionary *old = [sender representedObject];
+    NSAlert *alert = [NSAlert new]; alert.messageText = @"独立 SSH 连接设置";
+    alert.informativeText = @"Codex 活跃的远程主机会自动识别。需要固定连接或自定义队列路径时，在这里单独配置该服务器。";
     [alert addButtonWithTitle:@"安装脚本并连接"]; [alert addButtonWithTitle:@"取消"];
+    BOOL custom = old && ![old[@"automatic"] boolValue];
+    if (custom) [alert addButtonWithTitle:@"移除独立配置"];
     NSView *form = [[NSView alloc] initWithFrame:NSMakeRect(0,0,400,104)];
     self.configField = [NSTextField textFieldWithString:old[@"config"] ?: @"~/.ssh/config"];
     self.hostField = [[NSComboBox alloc] initWithFrame:NSMakeRect(85,38,305,24)];
@@ -93,17 +111,23 @@
     }
     NSButton *browse=[NSButton buttonWithTitle:@"选择…" target:self action:@selector(browseConfig:)];
     browse.frame=NSMakeRect(329,70,68,28); [form addSubview:browse];
+    if (old) {self.configField.editable=NO; self.hostField.enabled=NO; browse.enabled=NO;}
     [self refreshHosts]; alert.accessoryView=form;
     [NSApp activateIgnoringOtherApps:YES];
-    if ([alert runModal] != NSAlertFirstButtonReturn) return;
+    NSModalResponse choice=[alert runModal];
+    if (custom && choice==NSAlertThirdButtonReturn) {
+        NSString *error;
+        if (![self runSetup:@{@"action":@"remove",@"config":old[@"config"],@"host":old[@"host"]} error:&error]) [self showError:error];
+        return;
+    }
+    if (choice != NSAlertFirstButtonReturn) return;
     NSDictionary *request=@{@"action":@"install",@"config":self.configField.stringValue,@"host":self.hostField.stringValue,@"queue":self.queueField.stringValue};
-    self.settingsItem.enabled=NO; [self setStatus:@"结构快照 · 安装中"];
+    self.settingsItem.enabled=NO;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0), ^{
         NSString *error; id installed=[self runSetup:request error:&error];
         dispatch_async(dispatch_get_main_queue(), ^{
             self.settingsItem.enabled=YES;
-            if (installed) { if (self.connection.running) [self.connection terminate]; }
-            else { [self setStatus:@"结构快照 · 设置失败"]; [self showError:error]; }
+            if (!installed) [self showError:error];
         });
     });
 }
@@ -146,22 +170,14 @@
 - (void)watch {
     while (!self.stopping) {
         @autoreleasepool {
-            NSDictionary *settings = [self settings];
-            NSString *host=settings[@"host"], *config=settings[@"config"], *script=settings[@"installed"];
-            if (!host.length || !config.isAbsolutePath || !script.isAbsolutePath) {
-                dispatch_async(dispatch_get_main_queue(), ^{ [self setStatus:@"结构快照 · 请配置 SSH"]; });
-                [NSThread sleepForTimeInterval:2]; continue;
-            }
             NSTask *task = [NSTask new]; NSPipe *output = [NSPipe pipe]; NSPipe *input = [NSPipe pipe];
             self.connection = task;
-            task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/ssh"];
-            NSString *quoted=[script stringByReplacingOccurrencesOfString:@"'" withString:@"'\"'\"'"];
-            task.arguments = @[@"-F",config,@"-o",@"BatchMode=yes",@"-o",@"ConnectTimeout=15",@"-o",@"ServerAliveInterval=15",@"-o",@"ServerAliveCountMax=2",@"--",host,
-                               [NSString stringWithFormat:@"python3 -u '%@'",quoted]];
+            task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/python3"];
+            task.arguments = @[@"-u",[NSBundle.mainBundle pathForResource:@"broker" ofType:@"py"]];
             task.standardOutput = output; task.standardInput = input;
             task.standardError = [NSFileHandle fileHandleWithNullDevice];
             if ([task launchAndReturnError:nil]) {
-                if (![[self settings] isEqual:settings] || self.stopping) [task terminate];
+                if (self.stopping) [task terminate];
                 NSMutableData *buffer = [NSMutableData new];
                 @try {
                     while (!self.stopping) {
@@ -175,13 +191,13 @@
                             [buffer replaceBytesInRange:NSMakeRange(0,newline.location+1) withBytes:NULL length:0];
                             NSDictionary *message = [NSJSONSerialization JSONObjectWithData:line options:0 error:nil];
                             if (![message isKindOfClass:NSDictionary.class]) continue;
-                            if ([message[@"kind"] isEqual:@"ready"]) {
-                                dispatch_async(dispatch_get_main_queue(), ^{ [self setStatus:[@"结构快照 · " stringByAppendingString:host]]; }); continue;
+                            if ([message[@"kind"] isEqual:@"hosts"]) {
+                                dispatch_async(dispatch_get_main_queue(), ^{ [self showHosts:message[@"hosts"]]; }); continue;
                             }
                             NSString *identifier = message[@"id"];
                             if (![message[@"kind"] isEqual:@"snapshot"] || ![identifier isKindOfClass:NSString.class] || ![[NSUUID alloc] initWithUUIDString:identifier]) continue;
                             NSString *status = [self receive:message];
-                            NSData *reply = [NSJSONSerialization dataWithJSONObject:@{@"id":identifier,@"status":status} options:0 error:nil];
+                            NSData *reply = [NSJSONSerialization dataWithJSONObject:@{@"id":identifier,@"route":message[@"route"],@"status":status} options:0 error:nil];
                             [input.fileHandleForWriting writeData:reply];
                             [input.fileHandleForWriting writeData:[NSData dataWithBytes:"\n" length:1]];
                         }
