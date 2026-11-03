@@ -55,7 +55,7 @@ def read_frames(params: dict[str, Any]) -> dict[str, Any]:
         if offset > info.st_size or ((offset or arguments.get("version") is not None) and arguments.get("version") != version):
             raise ValueError("加载期间文件已改变；请重新打开，避免混合不同版本的帧。")
         if vasp:
-            batch = read_vasp_batch(stream, offset, frame_limit, path.name.upper() == "XDATCAR", index_only)
+            batch = read_vasp_batch(stream, offset, frame_limit, path.name.upper() == "XDATCAR", index_only, arguments.get("headerOffset", 0))
             if file_version(os.fstat(stream.fileno())) != version or file_version(path.stat()) != version:
                 raise ValueError("读取期间文件已改变，请重新打开。")
             return {**batch, "version": version, "totalBytes": info.st_size,

@@ -21,14 +21,15 @@ class StructurePaths:
     def __init__(self) -> None:
         self.files: dict[str, Path] = {}
 
-    def open(self, value: str | None) -> dict[str, Any]:
+    def open(self, value: str | None, companion: bool = False) -> dict[str, Any]:
         if not value:
             return {"browser": True, "host": socket.gethostname()}
         if not isinstance(value, str) or not Path(value).expanduser().is_absolute():
             raise ValueError("请输入当前主机上的完整绝对路径。")
         path = Path(value).expanduser()
-        if path.name.upper() not in {"POSCAR", "CONTCAR", "XDATCAR"} and path.suffix.lower() not in {".xyz", ".extxyz", ".traj", ".vasp"}:
-            raise ValueError("请选择 POSCAR、CONTCAR、XDATCAR 或 XYZ/extxyz/traj/VASP 结构文件。")
+        known_companion = companion and (path.name.startswith(("in.", "log.", "data.")) or path.suffix.lower() in {".in", ".inp", ".log"})
+        if not known_companion and not path.name.startswith(("data.", "dump.")) and path.name.upper() not in {"POSCAR", "CONTCAR", "XDATCAR"} and path.suffix.lower() not in {".xyz", ".extxyz", ".traj", ".vasp", ".gro", ".lammpstrj", ".dump", ".lammps", ".lmp", ".data", ".pdb", ".cif"}:
+            raise ValueError("不支持该结构文件名。")
         try:
             resolved = path.resolve(strict=True)
             if not stat.S_ISREG(resolved.stat().st_mode):

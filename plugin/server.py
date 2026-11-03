@@ -1,7 +1,7 @@
 """Dependency-free MCP server for the native Codex file-editor entrypoint."""
 
 # Configuration
-plugin_version = "0.10.0"
+plugin_version = "0.11.0"
 resource_uri = "ui://structure-viewer/editor.html"
 
 from pathlib import Path
@@ -11,6 +11,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from trajectory import read_frames
+from md_import import import_selected
 from snapshot import save_snapshot, snapshot_context
 from local_export import prepare_local_snapshot, snapshot_save_status
 from path_access import StructurePaths
@@ -27,6 +28,16 @@ def widget_html() -> str:
     """Inline all assets: no CDN, HTTP server or filesystem access in the UI."""
     html = (plugin_root / "web/index.html").read_text()
     for placeholder, filename in [
+        ("/*__THEME_JS__*/", "theme.js"),
+        ("/*__THEME_CSS__*/", "theme.css"),
+        ("/*__SHELL_THEME__*/", "shell-theme.css"),
+        ("/*__CHOICES_CSS__*/", "choices.css"),
+        ("/*__CHOICES_JS__*/", "choices.mjs"),
+        ("<!--__ICON_SPRITE__-->", "ui-icons.svg"),
+        ("/*__LAMMPS__*/", "lammps-metadata.js"),
+        ("/*__MD__*/", "md-stream.js"),
+        ("/*__IMPORT__*/", "import.js"),
+        ("/*__HOST_FILES__*/", "host-files.js"),
         ("/*__STYLE__*/", "style.css"),
         ("/*__I18N__*/", "i18n.js"),
         ("/*__3DMOL__*/", "vendor/3Dmol-min.js"),
@@ -45,6 +56,8 @@ def widget_html() -> str:
         ("/*__ANIMATION__*/", "animation.js"),
     ]:
         asset = (plugin_root / "web" / filename).read_text()
+        if filename == "ui-icons.svg":
+            asset = asset.replace("<svg ", '<svg aria-hidden="true" style="display:none" ', 1)
         if filename == "i18n.js":
             asset = asset.replace("/*__LOCALES__*/{}", (plugin_root / "web/locales.json").read_text())
         if filename == "vendor/3Dmol-min.js":
@@ -67,7 +80,7 @@ def tool_descriptor() -> dict[str, Any]:
         "_meta": {
             "ui": {"resourceUri": resource_uri, "visibility": ["app"]},
             "openai/ui": {"entrypoints": [{"type": "file", "extensions": [
-                ".extxyz", ".xyz", ".traj", ".vasp"]}]},
+                ".extxyz", ".xyz", ".traj", ".vasp", ".gro", ".lammpstrj", ".dump", ".data", ".lmp", ".lammps", ".pdb", ".cif"]}]},
         },
     }
 
@@ -96,12 +109,20 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
             "_meta": {"ui": {"visibility": ["app"]}},
         }, {
             "name": "open_structure_path", "title": "Structure Viewer",
-            "description": "Open an atomic structure in the viewer using its unchanged absolute path on this host, including bare POSCAR, CONTCAR and XDATCAR. Omit path to open the structure browser. Use this for user-requested VASP viewing instead of renaming or copying files.",
+            "description": "Open a structure on this host using its absolute path, including bare POSCAR/CONTCAR/XDATCAR, GRO, LAMMPS dumps/data, CIF and PDB. For LAMMPS, pass optional companion data, input or log paths with the primary trajectory. Omit path to open the structure browser.",
             "inputSchema": {"type": "object", "additionalProperties": False,
-                            "properties": {"path": {"type": "string"}}},
+                            "properties": {"path": {"type": "string"}, "companions": {"type":"array","items":{"type":"string"},"maxItems":31}}},
             "annotations": {"readOnlyHint": True, "openWorldHint": False},
             "_meta": {"ui": {"resourceUri": resource_uri, "visibility": ["app", "model"]},
                       "openai/ui": {"entrypoints": [{"type": "thread"}]}},
+        }, {
+            "name": "structure_import", "title": "Read scientific structure",
+            "inputSchema": {"type":"object","additionalProperties":False,"required":["action"],"properties":{
+                "action":{"enum":["stat","range","frames","convert"]},"token":{"type":"string"},
+                "version":{"type":"string"},"offset":{"type":"integer","minimum":0},"length":{"type":"integer","minimum":0,"maximum":1048576},
+                "indexOnly":{"type":"boolean"},"format":{"type":"string"},"text":{"type":"string"},
+                "elements":{"type":"array","items":{"type":"string"}},"units":{"type":"string"},"atomStyle":{"type":"string"}}},
+            "annotations":{"readOnlyHint":True,"openWorldHint":False},"_meta":{"ui":{"visibility":["app"]}},
         }, {
             "name": "read_structure_source", "title": "Read selected VASP structure",
             "description": "Read the structure already selected through the path browser.",
@@ -116,7 +137,7 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
                 "token": {"type": "string"},
                 "offset": {"type": "integer", "minimum": 0},
                 "frameLimit": {"type": "integer", "minimum": 1, "maximum": 4096},
-                "indexOnly": {"type": "boolean"},
+                "indexOnly": {"type": "boolean"}, "headerOffset": {"type":"integer","minimum":0},
                 "version": {"type": "string"}}},
             "annotations": {"readOnlyHint": True, "openWorldHint": False},
             "_meta": {"ui": {"visibility": ["app"]}},
@@ -162,9 +183,18 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": f"Opening {file['name']}"}],
                 "structuredContent": {"file": file}}
     if method == "tools/call" and params.get("name") == "open_structure_path":
-        result = selected_paths.open(params.get("arguments", {}).get("path"))
+        args = params.get("arguments", {})
+        result = selected_paths.open(args.get("path"))
+        companions = args.get("companions", [])
+        if not isinstance(companions,list) or len(companions)>31:
+            raise ValueError("请选择 1–32 个结构及配套文件")
+        if companions and "file" in result:
+            result["file"]["companions"] = [selected_paths.open(path, companion=True)["file"] for path in companions]
         return {"content": [{"type": "text", "text": f"Structure Viewer on {result['host']}"}],
                 "structuredContent": result}
+    if method == "tools/call" and params.get("name") == "structure_import":
+        result = import_selected(selected_paths.bind(params))
+        return {"content":[{"type":"text","text":"Read selected structure"}],"structuredContent":result}
     if method == "tools/call" and params.get("name") == "read_structure_source":
         result = selected_paths.read_source(params)
         return {"content": [{"type": "text", "text": "Read selected structure"}], "structuredContent": result}

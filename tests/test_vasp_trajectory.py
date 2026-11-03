@@ -61,6 +61,16 @@ class VaspTrajectoryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "改变"):
             self.read(offset=first["nextOffset"], version=version)
 
+    def test_repeated_cell_header_and_random_refetch(self) -> None:
+        second = header.replace(b"0 0 20", b"0 0 40")
+        self.path.write_bytes(header + frame + second + frame * 2)
+        first = self.read(frameLimit=1)
+        batch = self.read(offset=first["nextOffset"], version=first["version"], indexOnly=True)
+        self.assertEqual(batch["headerOffsets"], [len(header + frame)] * 2)
+        for offset in batch["offsets"]:
+            data = self.read(offset=offset, headerOffset=batch["headerOffsets"][0], version=first["version"], frameLimit=1)
+            self.assertEqual(data["text"].encode(), second + frame)
+
     def test_poscar_selective_and_truncated_xdatcar(self) -> None:
         self.path = self.path.with_name("POSCAR")
         content = header + b"Selective dynamics\nCartesian\n0 0 0 T T F\n1 2 3 F F F\n"

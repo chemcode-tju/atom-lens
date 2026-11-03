@@ -28,19 +28,45 @@ function request(method, params, timeoutMs = 60000) {
     window.parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
   });
 }
+function showImportNote(text) {
+  const fragments=document.createDocumentFragment();
+  for(const [i,part] of text.split(/ · |；(?=部分元素|未提供 units)/).entries()) {
+    if(i)fragments.append(' · ');
+    const span=document.createElement('span');
+    span.textContent=part;
+    fragments.append(span);
+  }
+  $("import-note").replaceChildren(fragments);
+}
 function status(text, error = false) { $("status").textContent = error ? text : ""; $("status").hidden = !error; }
-function stop() { ++playbackGeneration; cancelAnimationFrame(timer); timer = null; $("play").textContent = "▶"; $("play").setAttribute("aria-label", "播放轨迹"); }
+function displayPlayback(playing) {
+  const button = $("play"), label = playing ? "暂停轨迹" : "播放轨迹";
+  button.querySelector("use").setAttribute("href", "#i-" + (playing ? "pause" : "play"));
+  button.setAttribute("aria-label", label);
+  button.title = label;
+}
+function stop() { ++playbackGeneration; cancelAnimationFrame(timer); timer = null; displayPlayback(false); }
 function updateTimeline() {
   if (!doc) return;
   $("timeline").max = doc.count - 1; $("timeline").value = frameIndex; $("timeline").disabled = doc.count < 2;
   $("frame-number").max = doc.count; $("frame-number").value = frameIndex + 1;
-  $("frame-count").textContent = `/ ${doc.count}${streamComplete ? "" : "+"}`;
+  const total = String(doc.count) + (streamComplete ? "" : "+");
+  $("frame-total").textContent = total;
+  $("frame-summary").textContent = `${frameIndex + 1} / ${total}`;
+  const single = streamComplete && doc.count === 1;
+  $("trajectory-tools").classList.toggle("single-frame", single);
+  $("frame-number").readOnly = single;
+  $("first").disabled = $("previous").disabled = frameIndex === 0;
+  $("next").disabled = $("last").disabled = frameIndex === doc.count - 1;
+  $("play").disabled = doc.count < 2;
+  $("frame-number").closest(".frame-label").style.setProperty("--frame-digits", Math.max(2, total.length) + "ch");
+  if (!$("trajectory-tools").open || single) return;
   const width=$("ticks").clientWidth;
   const canvas=document.createElement('canvas'),context=canvas.getContext('2d');
   context.font=getComputedStyle($("ticks")).font;
   const marks=StructureControls.timelineTicks(doc.count,width,text=>context.measureText(text).width);
-  $("ticks").replaceChildren(...marks.map(({value,x})=>{
-    const span=document.createElement('span');span.textContent=value;span.style.left=x+'px';return span;
+  $("ticks").replaceChildren(...marks.map(({value,x,tickX})=>{
+    const span=document.createElement('span');span.textContent=value;span.style.left=x+'px';span.style.setProperty('--tick-offset',(tickX-x)+'px');return span;
   }));
 }
 function render(reset = false, strict = false) {
@@ -58,6 +84,9 @@ function render(reset = false, strict = false) {
   } catch (error) { stop(); status(error.message, true); if(strict)throw error; }
 }
 function updateSelection() {
+  const count = selection.length;
+  $("atom-panel").hidden = $("selected-summary").hidden = count === 0;
+  $("selected-summary").textContent = count ? `已选 ${count}` : "";
   $("atom-title").textContent=selection.length?`已选 ${selection.length}`:'';
   if(!frameData)return;
   const atoms=displayedFrame().atoms;
@@ -68,6 +97,7 @@ function updateSelection() {
   $("apply-display").disabled=$("reset-selected-style").disabled=!selection.length;
 }
 function selectionChanged() {
+  if (selection.length && $("atom-panel").hidden) $("trajectory-tools").open = true;
   stop();
   updateSelection();
   const ticket=++paintTicket;
@@ -81,7 +111,10 @@ function chooseBox(indices, toggle) {
   if(!indices.length)return;
   selection=toggle?StructureSelection.toggleIndices(selection,indices):indices;selectionChanged();
 }
-function resetDisplayState() { displayState=new StructureSelection.DisplayState();selection=[]; }
+function resetDisplayState() {
+  displayState = new StructureSelection.DisplayState(); selection = [];
+  $("atom-panel").hidden = $("selected-summary").hidden = true;
+}
 function populateElements() {
   if(!frameData)return;
   $("element-list").replaceChildren(...[...new Set(frameData.atoms.map(a=>a.elem))].sort().map(elem=>{
@@ -126,12 +159,17 @@ async function go(index) {
   })();
   return navigationTask;
 }
-function discardDocument() {doc?.dispose();doc=null;activeRecord=null;navigationTarget=null;navigationTask=null;}
+function discardDocument() {
+  doc?.dispose(); doc=null; activeRecord=null; navigationTarget=null; navigationTask=null;
+  document.body.classList.remove("has-structure");
+  $("drift-settings").disabled = true;
+}
 async function showDocument(store,generation) {
   if(generation!==readGeneration){store.dispose();return;}
   doc=store;const record=await store.get(0);
   if(generation!==readGeneration)return;
   activeRecord=record;
+  document.body.classList.add("has-structure");$("drift-settings").disabled=false;
   frameIndex=0;streamComplete=store.complete;render(true,true);status('');loading=false;
   // Render the first frame before starting any background index batch.
   afterPaint(()=>store.scan(()=>{if(doc===store){streamComplete=store.complete;updateTimeline();}})
@@ -144,8 +182,22 @@ async function loadFile(file, reload = false) {
   stop(); loading = true; streamComplete = false;
   fileRef = file; discardDocument(); frameIndex = 0; selection = [];
   $("source-toggle").hidden = binaryTrajectory; $("source-panel").hidden = true;
-  $("filename").textContent = file.name; status("正在读取第一帧…");
+  $("filename").removeAttribute("data-empty-title"); $("filename").textContent = file.name; $("import-note").textContent=""; status("正在读取第一帧…");
   try {
+    if(!/^(POSCAR|CONTCAR|XDATCAR)$|\.(xyz|extxyz|traj|vasp)$/i.test(file.name) || file.companions?.length) {
+      const files=await Promise.all([file,...(file.companions||[])].map(StructureHostFiles.open));
+      if(generation!==readGeneration)return;
+      if(!files[0] && files.length===1) {
+        const resource=await request('resources/read',{uri:file.resourceUri});
+        const part=resource.contents?.[0];
+        if (!part) throw Error('Codex 未返回文件内容');
+        files[0]=new File([part.text ?? Uint8Array.from(atob(part.blob),c=>c.charCodeAt(0))],file.name);
+      }
+      const imported=await StructureImport.open(files,{format:$("import-format").value});
+      await showDocument(imported.store,generation);
+      if(generation===readGeneration)showImportNote(imported.note);
+      return;
+    }
     const call=async args=>{
       const result=await request('tools/call',{name:'read_trajectory_frames',arguments:{...(file.token?{token:file.token}:{}),...args}});
       if(result.isError)throw Error(result.content?.find(c=>c.text)?.text||'分段读取失败');
@@ -164,7 +216,7 @@ async function loadFullFile(file) {
   if (/\.traj$/i.test(file.name)) { status("当前宿主不支持轨迹分段读取，请使用“打开”选择本地 .traj 文件", true); return; }
   loading = true; const generation = ++readGeneration; stop();
   $("source-toggle").hidden=false;
-  fileRef = file; $("filename").textContent = file.name; status("");
+  fileRef = file; $("filename").removeAttribute("data-empty-title"); $("filename").textContent = file.name; $("import-note").textContent=""; status("");
   try {
     const result = file.token ? await request('tools/call',{name:'read_structure_source',arguments:{token:file.token}}) : await request("resources/read", { uri: file.resourceUri, _meta: { "openai/resource": { representation: "text" } } });
     if(result.isError)throw Error(result.content?.find(c=>c.text)?.text||'结构读取失败');
@@ -208,7 +260,7 @@ $("play").onclick = () => {
   if (timer) return stop();
   if (!doc || doc.count < 2) return;
   if(frameIndex===doc.count-1 && streamComplete)go(0);
-  $("play").textContent = "Ⅱ"; $("play").setAttribute("aria-label", "暂停轨迹");
+  displayPlayback(true);
   const run=++playbackGeneration;
   let previous=performance.now(), accumulator=0;
   const tick=async now=>{
@@ -238,7 +290,7 @@ $("playback-apply").onclick=event=>{
   playback={fps:Number($("animation-fps").value),speed:Number($("playback-speed").value),step:Number($("playback-step").value),loop:$("playback-loop").checked};
 };
 $("reset").onclick = () => views?.fit();
-document.querySelectorAll("[data-orientation]").forEach(button=>button.onclick=()=>{views?.setOrientation(button.dataset.orientation);$("orientation").open=false;});
+$("orientation").onchange = event => views?.setOrientation(event.target.value);
 $("layout").onchange = event => views?.setLayout(event.target.value);
 $("expand").onclick = () => views?.toggleExpand();
 for (const mode of ["rotate", "pan", "zoom", "select", "box"]) $(mode).onclick = () => views?.setMode(mode);
@@ -247,7 +299,8 @@ $("last").onclick = () => { stop(); if (doc) go(doc.count - 1); };
 for (const id of ["style", "palette", "radius-scale", "cell", "labels", "hbonds", "wrap"]) $(id).onchange = () => { stop(); status(""); scheduleRender(); };
 function openPanel(panel) { if(!panel.open)panel.show(); }
 for(const id of ['display-dialog','drift-dialog'])StructureControls.draggable($(id));
-new ResizeObserver(()=>updateTimeline()).observe($("ticks"));
+new ResizeObserver(updateTimeline).observe($("ticks"));
+$("trajectory-tools").addEventListener("toggle",updateTimeline);
 $("drift-settings").onclick=()=>{
   $("drift-reference").max=Math.max(0,(doc?.count||1)-1);
   openPanel($("drift-dialog"));
@@ -280,20 +333,58 @@ $("drift-apply").onclick=async()=>{
   }catch(error){$("drift-error").textContent=error.message;}finally{$("drift-apply").disabled=false;}
 };
 $("source-toggle").onclick = () => { stop(); $("source-panel").hidden = !$("source-panel").hidden; if(doc)$("source").value=activeRecord.text; };
-request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.10.0" }, appCapabilities: {} })
+request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.11.0" }, appCapabilities: {} })
   .then(() => { send("ui/notifications/initialized", {}); status("已连接，等待文件…"); })
   .catch(error => status(`连接失败：${error.message}`, true));
 
-$("open-file").onclick=()=>$("file-picker").click();
-$("file-picker").onchange=async()=>{
-  const file=$("file-picker").files[0];if(!file)return;
-  const generation=++readGeneration;stop();clearFollow();resetDisplayState();pickedFile=true;fileRef=null;frameIndex=0;selection=[];discardDocument();
-  binaryTrajectory=/\.traj$/i.test(file.name);$("source-toggle").hidden=binaryTrajectory;$("source-panel").hidden=true;status("");$("filename").textContent=file.name;
+async function openStructure(files, format = $("import-format").value) {
+  const file = files[0];
+  pickedFile=true;fileRef=null;
+  const generation = ++readGeneration;
+  stop(); clearFollow(); resetDisplayState(); discardDocument();
+  ++snapshotTicket; snapshotData = null;
+  for (const id of ["snapshot-dialog", "drift-dialog", "display-dialog"]) $(id).close();
+  frameIndex = 0; frameData = null; loading = true; streamComplete = false;
+  if (views) {
+    for (const pane of views.panes) {
+      pane.ready = false;
+      pane.viewer.removeAllModels(); pane.viewer.removeAllShapes(); pane.viewer.removeAllLabels();
+      pane.viewer.render();
+    }
+  }
+  $("atom-title").textContent = $("measurement").textContent = $("atom-list").textContent = "";
+  $("frame-total").textContent = "—"; $("frame-summary").textContent = ""; $("timeline").disabled = true;
+  $("source-panel").hidden = true; $("source-toggle").hidden = /\.traj$/i.test(file.name);
+  $("filename").removeAttribute("data-empty-title"); $("filename").textContent = file.name; $("import-note").textContent=""; status("");
+  $("import-note").textContent = "正在读取…";
   try {
-    loading=true;streamComplete=false;
-    await showDocument(await StructureTrajectory.local(file),generation);
-  } catch(error){status(error.message,true);}finally{if(generation===readGeneration)loading=false;$("file-picker").value='';}
+    const imported = await StructureImport.open(files, {format});
+    if (generation !== readGeneration) { imported.store.dispose(); return; }
+    $("filename").textContent = imported.name;
+    $("source-toggle").hidden = /\.traj$/i.test(imported.name);
+    await showDocument(imported.store, generation);
+    if (generation !== readGeneration) return;
+    showImportNote(imported.note);
+    return {name: imported.name};
+  } catch (error) {
+    if (generation !== readGeneration) return;
+    discardDocument();
+    status(error.message, true);
+    $("import-note").textContent = "读取失败，请检查文件或导入选项后重新选择。";
+    return {name: file.name, error: error.message};
+  } finally { if (generation === readGeneration) loading = false; }
+}
+$("open-empty").onclick = $("open-file").onclick = () => $("file-picker").click();
+$("file-picker").onchange = () => {
+  const files = Array.from($("file-picker").files); $("file-picker").value = "";
+  if (files.length) openStructure(files);
 };
+document.addEventListener("dragover", event => event.preventDefault());
+document.addEventListener("drop", event => {
+  event.preventDefault(); const files = Array.from(event.dataTransfer.files);
+  if (files.length) openStructure(files);
+});
+window.addEventListener("pagehide", () => { stop(); discardDocument(); });
 function snapshotOptions(){return {dpi:Number($("snapshot-dpi").value),format:$("snapshot-format").value,transparent:$("snapshot-transparent").checked,crop:$("snapshot-crop").checked};}
 async function refreshSnapshot(){
   const ticket=++snapshotTicket;snapshotData=null;$("snapshot-save").disabled=true;$("snapshot-result").textContent='';
@@ -345,7 +436,7 @@ $("snapshot-save").onclick=async()=>{
 };
 
 $("open-path").onclick=async()=>{
-  stop();$("structure-path").value=fileRef?.path||'';$("path-error").textContent='';$("path-dialog").showModal();
+  stop();$("companion-paths").value=(fileRef?.companions||[]).map(item=>item.path).join("\n");$("structure-path").value=fileRef?.path||'';$("path-error").textContent='';$("path-dialog").showModal();
   try {const r=await request('tools/call',{name:'open_structure_path',arguments:{}});if(r.structuredContent?.host){hostName=r.structuredContent.host;$("path-host").textContent=`${hostName} 上的完整路径`;}}catch(e){$("path-error").textContent=e.message;}
 };
 $("path-close").onclick=()=>$("path-dialog").close();
@@ -353,10 +444,21 @@ $("path-load").onclick=async()=>{
   const path=$("structure-path").value.trim();if(!path)return;
   $("path-load").disabled=true;$("path-error").textContent='';
   try {
-    const result=await request('tools/call',{name:'open_structure_path',arguments:{path}});
+    const result=await request('tools/call',{name:'open_structure_path',arguments:{path,companions:$("companion-paths").value.split(/\r?\n/).map(line=>line.trim()).filter(Boolean)}});
     if(result.isError)throw Error(result.content?.find(c=>c.text)?.text||'打开失败');
     if(!result.structuredContent?.file)throw Error('未返回结构文件');
     $("path-dialog").close();await loadFile(result.structuredContent.file);
   }catch(e){$("path-error").textContent=e.message;}finally{$("path-load").disabled=false;}
 };
 $("structure-path").onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();$("path-load").click();}};
+
+const themeControls = {mode: $("theme-mode"), fontSize: $("theme-size")};
+function syncThemeControls() {
+  const settings = chemistryTheme.read();
+  themeControls.mode.value = settings.mode;
+  themeControls.fontSize.value = String(settings.fontSize);
+}
+for (const control of Object.values(themeControls)) control.onchange = () => {
+  chemistryTheme.save({mode:themeControls.mode.value,fontSize:Number(themeControls.fontSize.value)});
+};
+syncThemeControls();

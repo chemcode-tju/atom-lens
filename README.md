@@ -2,6 +2,16 @@
 
 在 Codex 侧面板查看原子结构与轨迹。MCP Apps 文件入口，无需 skill 或独立 HTTP 服务。0.5.0 起结构文件始终只读；快照另存为图片。
 
+## 0.11.0 结构查看界面与 MD 文件导入
+
+界面来自 Chem-Agent 的结构查看页（提交 `8723c42`），文件读取来自 `02b0486`。在 **查看选项** 中切换跟随系统、浅色或深色，以及界面字号。底部 **轨迹与视图** 默认折叠，显示当前帧和总帧数，首次选中原子时自动展开。主题作用于界面，原子视口与导出仍使用插件的配色、半径、相机和光照。
+
+- **本地文件** 支持多选和拖放。LAMMPS 可联合选中一条 atom/custom 文本 dump、同次计算的 data、输入脚本和日志，识别元素、单位和边界条件。质量推断会显示提示，映射冲突会报错。支持 metal / real 单位。
+- **按路径打开** 中填主结构的绝对路径，LAMMPS 配套文件每行一个绝对路径。远程 GRO 和 dump 在文件所在主机分批索引，按需传输完整帧。
+- **GROMACS** 支持单帧和多帧 GRO，坐标与晶胞从 nm 转成 Å。XTC、TRR、TPR 尚未接入。
+- **CIF、PDB、LAMMPS data** 使用当前插件主机已有的 ASE 转换。若 ASE 在独立环境，可通过 `STRUCTURE_VIEWER_ASE_PYTHON` 指定解释器。静态转换输入上限为 32 MiB，文本轨迹继续按需读取。
+- **XDATCAR** 支持重复晶胞头部，每帧使用自己的晶胞。
+
 ## 0.10.0：按需加载、有限缓存与统一场景
 
 - 首帧读取完成立即显示，随后仅在后台扫描帧位置；已索引部分可立即跳转、播放。XYZ/extxyz 与原名 VASP 均适用，ASE `.traj` 直接使用已有 ULM 索引。
@@ -96,7 +106,7 @@
 
 ## 安装
 
-需要支持 MCP Apps 文件入口的新版 Codex 桌面端，以及 `python3`（3.9 或以上）。插件服务只使用 Python 标准库；运行插件不需要 ASE、Node.js 或 npm。
+需要支持 MCP Apps 文件入口的新版 Codex 桌面端，以及 `python3`（3.9 或以上）。基础查看器使用 Python 标准库。CIF、PDB 和 LAMMPS data 转换另外使用 ASE。
 
 ```sh
 git clone https://github.com/liyang-tju/extxyz-extension.git
@@ -132,14 +142,16 @@ python3 native/install_helper.py
 | 原始文件 | 读取范围 |
 | --- | --- |
 | `POSCAR` / `CONTCAR` | VASP 5/6，Direct/Cartesian，保持原名 |
-| `XDATCAR` | 固定晶胞多帧，保持原名，首帧优先渐进读取 |
+| GRO / LAMMPS dump | 文本多帧、按需读取 |
+| PDB / CIF / LAMMPS data | ASE 静态转换 |
+| `XDATCAR` | 多帧及重复晶胞头部，保持原名，首帧优先渐进读取 |
 | `.xyz` / `.extxyz` | 多帧、属性列、晶胞与 PBC |
 | `.traj` | 现代 ASE ULM 多帧、可变原子数 |
 | `.vasp` | VASP 结构 |
 
 2026-10-28 核查本机当前 Codex：文件查看器仅检查文件名是否以 `"." + extension` 结尾；指定查看器和恢复文件标签时也再次执行匹配，没有完整文件名或通配符入口。当前协议文件入口只有 `type` 与 `extensions`。未修改应用包。要保留 VASP 原名，应使用新注册的聊天侧栏工具入口或 agent 的 `open_structure_path`，而非外部应用菜单。
 
-VASP 4 缺少元素名时明确报错。XDATCAR 暂限固定晶胞，已移除原 64 MiB 单文件上限。球棍连接按距离推断，暂不包含跨周期边界的普通化学键。
+VASP 4 缺少元素名时明确报错。XDATCAR 支持重复晶胞头部及大轨迹。球棍连接按距离推断，暂不包含跨周期边界的普通化学键。
 
 ## 开发验证
 

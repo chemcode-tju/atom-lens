@@ -9,26 +9,31 @@ def required_line(stream: BinaryIO) -> bytes:
     return line
 
 
-def read_vasp_batch(stream: BinaryIO, offset: int, frame_limit: int, trajectory: bool, index_only: bool = False) -> dict[str, Any]:
-    """Repeat the small header in each batch so the browser can reuse its VASP parser."""
-    stream.seek(0)
+def read_header(stream: BinaryIO, offset: int) -> tuple[list[bytes], int, bytes, int]:
+    stream.seek(offset)
     header = [required_line(stream) for _ in range(7)]
     try:
         counts = [int(value) for value in header[6].split()]
     except ValueError as error:
         raise ValueError("VASP 元素计数无效；需要含元素名的 VASP 5/6 文件。") from error
-    if not counts or any(count < 0 for count in counts) or sum(counts) < 1:
+    if not counts or min(counts) < 0 or not 1 <= sum(counts) <= 100000:
         raise ValueError("VASP 元素计数无效。")
-    atom_count = sum(counts)
-    first_mode = required_line(stream)
-    if first_mode.strip().lower().startswith(b"s"):
-        header.append(first_mode)
-        first_mode = required_line(stream)
+    mode = required_line(stream)
+    if mode.strip().lower().startswith(b"s"):
+        header.append(mode)
+        mode = required_line(stream)
+    return header, sum(counts), mode, stream.tell() - len(mode)
+
+
+def read_vasp_batch(stream: BinaryIO, offset: int, frame_limit: int, trajectory: bool,
+                    index_only: bool = False, header_offset: int = 0) -> dict[str, Any]:
+    """Keep the offset of each frame's cell header for random access."""
+    if type(header_offset) is not int or not 0 <= header_offset <= offset:
+        raise ValueError("无效文件偏移。")
+    header, atom_count, first_mode, first_position = read_header(stream, header_offset)
     trajectory = trajectory or b"configuration" in first_mode.lower()
-    if offset:
-        stream.seek(offset)
-    else:
-        stream.seek(stream.tell() - len(first_mode))
+    stream.seek(offset or first_position)
+    header_offsets: list[int] = []
     frames: list[bytes] = []
     offsets: list[int] = []
     size = 0
@@ -39,8 +44,22 @@ def read_vasp_batch(stream: BinaryIO, offset: int, frame_limit: int, trajectory:
             mode = stream.readline()
         if not mode:
             break
+        mode_offset = stream.tell() - len(mode)
+        word = mode.strip().lower().split()[0]
+        if trajectory and mode_offset != first_position and word not in {b"direct", b"cartesian", b"d", b"c", b"k", b"kartesian"}:
+            # A data batch has one header. End it before the cell changes.
+            if frames:
+                stream.seek(mode_offset)
+                break
+            header_offset = mode_offset
+            try:
+                header, atom_count, mode, first_position = read_header(stream, header_offset)
+            except ValueError as error:
+                raise ValueError("无法识别 VASP 坐标模式或轨迹头部") from error
+            start = first_position
         if mode.strip()[:1].lower() not in {b"d", b"c", b"k"}:
-            raise ValueError("无法识别 VASP 坐标模式；XDATCAR 当前需要固定晶胞。")
+            raise ValueError("无法识别 VASP 坐标模式")
+        header_offsets.append(header_offset)
         rows = [] if index_only else [mode]
         frame_size = len(mode)
         for _ in range(atom_count):
@@ -63,4 +82,4 @@ def read_vasp_batch(stream: BinaryIO, offset: int, frame_limit: int, trajectory:
             break
     return {"supported": True, "format": "vasp",
             "text": (b"".join(header + frames).decode("utf-8") if frames else ""),
-            "frameCount": len(offsets), "offsets": offsets, "nextOffset": stream.tell()}
+            "frameCount": len(offsets), "offsets": offsets, "headerOffsets": header_offsets, "nextOffset": stream.tell()}

@@ -1,7 +1,7 @@
 {
   "name": "structure-viewer",
-  "version": "0.10.0",
-  "description": "Read-only structure viewer with stable incremental selection, mass-weighted drift correction, and an optional native macOS snapshot saver for nd3.",
+  "version": "0.11.0",
+  "description": "Read-only structure viewer with switchable themes, on-demand MD trajectories, atom selection and native snapshot export.",
   "author": {
     "name": "liyang-tju"
   },
@@ -10,7 +10,7 @@
   "interface": {
     "displayName": "Structure Viewer",
     "shortDescription": "原子结构与轨迹查看、选择与测量",
-    "longDescription": "Open POSCAR, CONTCAR and XDATCAR by their original paths through the Structure Viewer thread tab, locally or on the connected remote host. XYZ/extxyz/traj native file entrypoints, element visibility, box selection, measurements and snapshots are included.",
+    "longDescription": "Open POSCAR, CONTCAR and XDATCAR by their original paths through the Structure Viewer thread tab, locally or on the connected remote host. Open LAMMPS trajectories with companion files, GROMACS GRO, ASE trajectories, XYZ/extxyz, PDB and CIF. Includes element visibility, box selection, measurements and snapshots.",
     "category": "Education & Research",
     "capabilities": [
       "Interactive",
