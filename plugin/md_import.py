@@ -11,19 +11,22 @@ from pathlib import Path
 from typing import Any, BinaryIO
 
 from trajectory import file_version
+from file_snapshot import IncompleteFrame, is_snapshot, open_snapshot
 
 
-def read_md_index(stream: BinaryIO, fmt: str, offset: int, index_only: bool) -> dict[str, Any]:
+def read_md_index(stream: BinaryIO, fmt: str, offset: int, index_only: bool, frozen: bool = False) -> dict[str, Any]:
     """Walk frame boundaries on the data host. Only requested frames cross MCP."""
     stream.seek(offset)
     offsets: list[int] = []
-    end = os.fstat(stream.fileno()).st_size
+    stream.seek(0, 2)
+    end = stream.tell()
+    stream.seek(offset)
     text = ""
 
     def required() -> bytes:
         row = stream.readline()
-        if not row:
-            raise ValueError("轨迹末尾存在不完整帧")
+        if not row or (frozen and not row.endswith(b"\n")):
+            raise IncompleteFrame("轨迹末尾存在不完整帧")
         return row
 
     def item(prefix: bytes) -> bytes:
@@ -34,38 +37,42 @@ def read_md_index(stream: BinaryIO, fmt: str, offset: int, index_only: bool) -> 
 
     while stream.tell() < end:
         start = stream.tell()
-        title = required().strip()
-        if not title and fmt != "gromacs":
-            continue
-        if fmt == "gromacs":
-            count_line = stream.readline()
-            if not title and not count_line.strip() and stream.tell() == end:
-                break
-            count = int(count_line)
-        elif fmt == "lammps-dump-text":
-            while title in (b"ITEM: UNITS", b"ITEM: TIME"):
-                required()
-                title = required().strip()
-            if title != b"ITEM: TIMESTEP":
-                raise ValueError("仅支持 LAMMPS atom/custom 文本 dump")
-            required()
-            label = required().strip()
-            while label in (b"ITEM: UNITS", b"ITEM: TIME"):
+        try:
+            title = required().strip()
+            if not title and fmt != "gromacs":
+                continue
+            if fmt == "gromacs":
+                count_line = required()
+                count = int(count_line)
+            elif fmt == "lammps-dump-text":
+                while title in (b"ITEM: UNITS", b"ITEM: TIME"):
+                    required()
+                    title = required().strip()
+                if title != b"ITEM: TIMESTEP":
+                    raise ValueError("仅支持 LAMMPS atom/custom 文本 dump")
                 required()
                 label = required().strip()
-            if label != b"ITEM: NUMBER OF ATOMS":
-                raise ValueError("dump 缺少 NUMBER OF ATOMS")
-            count = int(required())
-            item(b"ITEM: BOX BOUNDS")
-            for _ in range(3):
+                while label in (b"ITEM: UNITS", b"ITEM: TIME"):
+                    required()
+                    label = required().strip()
+                if label != b"ITEM: NUMBER OF ATOMS":
+                    raise ValueError("dump 缺少 NUMBER OF ATOMS")
+                count = int(required())
+                item(b"ITEM: BOX BOUNDS")
+                for _ in range(3):
+                    required()
+                item(b"ITEM: ATOMS ")
+            else:
+                raise ValueError("Unsupported MD format")
+            if not 1 <= count <= 100000:
+                raise ValueError("每帧原子数必须为 1–100000")
+            for _ in range(count + (fmt == "gromacs")):
                 required()
-            item(b"ITEM: ATOMS ")
-        else:
-            raise ValueError("Unsupported MD format")
-        if not 1 <= count <= 100000:
-            raise ValueError("每帧原子数必须为 1–100000")
-        for _ in range(count + (fmt == "gromacs")):
-            required()
+        except IncompleteFrame:
+            if not frozen:
+                raise
+            stream.seek(end)
+            return dict(offsets=offsets, nextOffset=end, eof=True, text=text, incompleteTail=True)
         offsets.append(start)
         if not index_only:
             finish = stream.tell()
@@ -110,6 +117,26 @@ def import_selected(params: dict[str, Any]) -> dict[str, Any]:
     path = params.get("_meta", {}).get("openai/resource", {}).get("path")
     if not isinstance(path, str) or not Path(path).is_absolute():
         return {"supported": False}
+    if action == "stat" or is_snapshot(args.get("version")):
+        with open_snapshot(Path(path), None if action == "stat" else args["version"]) as (stream, snapshot):
+            if action == "stat":
+                return {"size": snapshot.size, "version": snapshot.version, "supported": True, "frozen": True}
+            offset = args.get("offset", 0)
+            if type(offset) is not int or not 0 <= offset <= snapshot.size:
+                raise ValueError("无效文件偏移。")
+            if action == "frames":
+                return read_md_index(stream, args["format"], offset, args.get("indexOnly", False), frozen=True)
+            if action == "range":
+                length = args["length"]
+                if type(length) is not int or not 0 <= length <= 1048576:
+                    raise ValueError("Invalid chunk size")
+                stream.seek(offset)
+                return {"data": base64.b64encode(stream.read(length)).decode("ascii")}
+            if action == "convert":
+                if snapshot.size > 32 * 1048576:
+                    raise ValueError("Static structure conversion is limited to 32 MiB")
+                return convert_static({**args, "text": stream.read().decode("utf-8-sig")})
+            raise ValueError("Unsupported import action")
     with os.fdopen(os.open(path, os.O_RDONLY | os.O_NONBLOCK), "rb") as stream:
         info = os.fstat(stream.fileno())
         if not stat.S_ISREG(info.st_mode):

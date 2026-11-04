@@ -11,7 +11,7 @@ const StructureHostFiles = (() => {
     if (!meta.supported) return null;
     const read = args => call({...binding,version:meta.version,...args});
     const file = {
-      name:ref.name, size:meta.size,
+      name:ref.name, size:meta.size, frozen:!!meta.frozen,
       topology(){return read({action:"topology"});},
       cellBinding:ref.token?{cellToken:ref.token,cellVersion:meta.version}:null,
       async xyzSource(cellBinding){

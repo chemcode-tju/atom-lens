@@ -39,5 +39,11 @@ function trrFrame(step,width,{coords=true,n=1}={}){
   assert.deepEqual(frame.pbc,[true,true,false]);
   await assert.rejects(open([tpr,trr(trrFrame(1,4,{n:2}))]),/atom count mismatch/);
   await assert.rejects(open([tpr,trr(trrFrame(1,4).subarray(0,-3))]),/Truncated/);
+  for(const tail of [trrFrame(2,8).subarray(0,30),trrFrame(2,8).subarray(0,-3)]) {
+    const growing=trr(trrFrame(1,4),tail);growing.frozen=true;
+    const opened=await open([tpr,growing]);await opened.store.scan(()=>{});
+    assert.equal(opened.store.count,1);assert.equal(opened.store.complete,true);
+    assert.equal((await opened.store.get(0)).frame.atoms[0].x,10);
+  }
   console.log('Paired imports: step alignment, missing/duplicate CELL rows, mixed TRR precision, frame skipping, PBC and invalid data passed.');
 })().catch(e=>{console.error(e);process.exitCode=1});

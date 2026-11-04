@@ -90,7 +90,16 @@ def topology_request(params: dict[str, Any]) -> dict:
     if args.get("token"):
         path = Path(params["_meta"]["openai/resource"]["path"])
         from trajectory import file_version
+        from file_snapshot import is_snapshot, open_snapshot
         version = args.get("version")
+        if is_snapshot(version):
+            with open_snapshot(path, version) as (_, snapshot):
+                if path.stat().st_size != snapshot.size:
+                    raise ValueError("Topology changed; reopen it.")
+                result = metadata(path)
+                if path.stat().st_size != snapshot.size:
+                    raise ValueError("Topology changed; reopen it.")
+                return result
         if file_version(path.stat()) != version:
             raise ValueError("Topology changed; reopen it.")
         result = metadata(path)

@@ -7,6 +7,7 @@ import os
 import stat
 from ase_trajectory import read_batch
 from vasp_trajectory import read_vasp_batch
+from file_snapshot import IncompleteFrame, is_snapshot, open_snapshot
 
 
 def file_version(info: Any) -> str:
@@ -22,15 +23,17 @@ def read_line(stream: BinaryIO, remaining: int) -> bytes:
     return line
 
 
-def xyz_index(stream: BinaryIO, offset: int, end: int, limit: int) -> dict[str, Any]:
+def xyz_index(stream: BinaryIO, offset: int, end: int, limit: int, frozen: bool = False) -> dict[str, Any]:
     """Count complete XYZ records within a bounded block, preserving byte offsets."""
     stream.seek(offset)
-    data = stream.read(8 * 1048576)
+    data = stream.read(min(8 * 1048576, end - offset))
     eof = offset + len(data) == end
     rows = data.split(b"\n")
     # The last item is either a partial line, a final unterminated line,
     # or the empty sentinel produced by a trailing newline.
     if not eof or not rows[-1]:
+        rows.pop()
+    if frozen and eof and rows and not data.endswith(b"\n") and len(rows[-1].split()) < 4:
         rows.pop()
     cursor = offset
     i = 0
@@ -52,6 +55,9 @@ def xyz_index(stream: BinaryIO, offset: int, end: int, limit: int) -> dict[str, 
             raise ValueError(f"字节 {cursor} 处不是有效的原子数。")
         next_frame = i + int(count) + 2
         if next_frame > len(rows):
+            if frozen and eof:
+                cursor = end
+                break
             if offsets:
                 cursor = start
                 break
@@ -67,6 +73,8 @@ def xyz_index(stream: BinaryIO, offset: int, end: int, limit: int) -> dict[str, 
         offsets.append(start)
         cursor += sum(map(len, rows[i:next_frame])) + next_frame - i
         i = next_frame
+    if frozen and eof and i >= len(rows):
+        cursor = end
     cursor = min(cursor, end)
     if not offsets and cursor < end and not eof:
         raise ValueError("单帧超过 8 MiB 分段预览上限。")
@@ -96,6 +104,11 @@ def read_frames(params: dict[str, Any]) -> dict[str, Any]:
     maximum = 4096 if index_only else 32
     if type(frame_limit) is not int or not 1 <= frame_limit <= maximum:
         raise ValueError(f"每次读取帧数必须为 1–{maximum}。")
+    version = arguments.get("version")
+    if path.suffix.lower() != ".traj" and (version is None or is_snapshot(version)):
+        if offset and version is None:
+            raise ValueError("文件会话已改变；请重新打开。")
+        return frozen_frames(path, arguments, offset, frame_limit, index_only, vasp)
     blocks: list[bytes] = []
     offsets: list[int] = []
     frame_count = 0
@@ -159,3 +172,64 @@ def read_frames(params: dict[str, Any]) -> dict[str, Any]:
             "frameCount": frame_count, "offsets": offsets, "nextOffset": next_offset,
             "totalBytes": info.st_size, "eof": next_offset == info.st_size,
             "version": version}
+
+
+def frozen_frames(path: Path, arguments: dict[str, Any], offset: int, frame_limit: int,
+                  index_only: bool, vasp: bool) -> dict[str, Any]:
+    """Read only complete records within the opening boundary; ignore append."""
+    with open_snapshot(path, arguments.get("version")) as (stream, snapshot):
+        if offset > snapshot.size:
+            raise ValueError("无效文件偏移。")
+        if vasp:
+            batch = read_vasp_batch(stream, offset, frame_limit, path.name.upper() == "XDATCAR",
+                                    index_only, arguments.get("headerOffset", 0), frozen=True)
+        else:
+            batch = frozen_xyz(stream, offset, frame_limit, index_only, snapshot.size)
+        if not batch["frameCount"] and offset == 0:
+            raise ValueError("文件尚无完整结构帧，请等待当前帧写完后重新打开（不完整帧）。")
+        return {**batch, "supported": True, "version": snapshot.version,
+                "totalBytes": snapshot.size, "eof": batch["nextOffset"] == snapshot.size, "frozen": True}
+
+
+def frozen_xyz(stream: BinaryIO, offset: int, limit: int, index_only: bool, end: int) -> dict[str, Any]:
+    """Index/read complete XYZ frames while retaining valid frames before a tail."""
+    if index_only:
+        return xyz_index(stream, offset, end, limit, frozen=True)
+    stream.seek(offset)
+    offsets: list[int] = []
+    blocks: list[bytes] = []
+    incomplete = False
+    while len(offsets) < limit and stream.tell() - offset < 262144:
+        start = stream.tell()
+        rows = []
+        while True:
+            line = read_line(stream, 8388608)
+            rows.append(line)
+            if line.strip() or not line:
+                break
+        if not line:
+            blocks.extend(rows)
+            break
+        if not line.strip().isdigit() or not 1 <= int(line) <= 100000:
+            if stream.tell() == end and not line.endswith(b"\n"):
+                incomplete = True
+                break
+            raise ValueError(f"字节 {start} 处不是有效的原子数。")
+        size = sum(map(len, rows))
+        try:
+            for atom in range(int(line) + 1):
+                row = read_line(stream, 8388608 - size)
+                if not row or (atom > 0 and len(row.split()) < 4):
+                    if stream.tell() == end:
+                        raise IncompleteFrame("轨迹末尾存在不完整帧")
+                    raise ValueError("XYZ 原子坐标列不完整")
+                rows.append(row)
+                size += len(row)
+        except IncompleteFrame:
+            stream.seek(end)
+            incomplete = True
+            break
+        offsets.append(start)
+        blocks.extend(rows)
+    return {"text": b"".join(blocks).decode("utf-8"), "frameCount": len(offsets),
+            "offsets": offsets, "nextOffset": stream.tell(), "incompleteTail": incomplete}

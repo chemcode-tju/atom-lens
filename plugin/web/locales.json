@@ -355,5 +355,11 @@
   "轨迹链接最多支持 31 个配套文件。": "Trajectory links support up to 31 companions.",
   "轨迹链接包含重复文件。": "Duplicate file in the trajectory link.",
   "宿主没有提供轨迹链接路径，请在对应主机的查看器中按路径打开。": "The host did not supply a link path. Open the link by path in the viewer on the host that owns it.",
-  "轨迹链接过大。": "The trajectory link is too large."
+  "轨迹链接过大。": "The trajectory link is too large.",
+  "文件已改变（替换、截短或改写）；请重新打开。": "File replaced, truncated or rewritten; reopen it.",
+  "已读取的文件内容已改变；请重新打开。": "Previously read file content changed; reopen it.",
+  "文件读取会话已改变或失效；请重新打开。": "File reading session changed or expired; reopen it.",
+  "文件会话已改变；请重新打开。": "File session changed; reopen it.",
+  "文件尚无完整结构帧，请等待当前帧写完后重新打开（不完整帧）。": "No complete frame yet. Wait for the current frame to finish writing, then reopen.",
+  "XYZ 原子坐标列不完整": "Incomplete XYZ coordinate columns"
 }

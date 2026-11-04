@@ -7,6 +7,10 @@ import math
 import re
 
 from trajectory import file_version
+from file_snapshot import is_snapshot, open_snapshot
+from contextlib import contextmanager
+from typing import Iterator
+import io
 
 _step = re.compile(r"(?:^|[,\s])i\s*=\s*(-?\d+)\b")
 _units = re.compile(r"\bAx\s*\[([^\]]+)\]", re.I)
@@ -16,8 +20,10 @@ _units = re.compile(r"\bAx\s*\[([^\]]+)\]", re.I)
 def _cells(path: Path, version: str) -> dict[int, str]:
     result: dict[int, str] = {}
     scale = 1.0
-    with path.open(encoding="utf-8") as stream:
+    with cell_stream(path, version) as stream:
         for line in stream:
+            if is_snapshot(version) and not line.endswith("\n"):
+                break
             line = line.strip()
             if not line:
                 continue
@@ -36,16 +42,19 @@ def _cells(path: Path, version: str) -> dict[int, str]:
             if step in result:
                 raise ValueError(f"Duplicate CP2K CELL step: {step}")
             result[step] = " ".join(str(v * scale) for v in fields[2:11])
-    if version != file_version(path.stat()):
+    if not is_snapshot(version) and version != file_version(path.stat()):
         raise ValueError("CELL changed; reopen both files.")
     return result
 
 
 def attach_cell(batch: dict, path: Path, version: str) -> None:
-    if path.suffix.lower() != ".cell" or file_version(path.stat()) != version:
+    if path.suffix.lower() != ".cell" or (not is_snapshot(version) and file_version(path.stat()) != version):
         raise ValueError("Invalid or changed CP2K CELL file; reopen both files.")
     if not batch.get("text"):
         return
+    if is_snapshot(version):
+        with open_snapshot(path, version):
+            pass
     table = _cells(path, version)
     lines = batch["text"].splitlines(keepends=True)
     i = 0
@@ -63,6 +72,22 @@ def attach_cell(batch: dict, path: Path, version: str) -> None:
             raise ValueError(f"No CELL row for CP2K XYZ step {step}")
         lines[i + 1] = f'Lattice="{table[step]}" pbc="T T T" step={step} {header}'
         i += count + 2
-    if version != file_version(path.stat()):
+    if not is_snapshot(version) and version != file_version(path.stat()):
         raise ValueError("CELL changed; reopen both files.")
     batch["text"] = "".join(lines)
+
+
+@contextmanager
+def cell_stream(path: Path, version: str) -> Iterator:
+    """CELL appends must not invalidate a frozen XYZ/CELL pair."""
+    if is_snapshot(version):
+        with open_snapshot(path, version) as (stream, _):
+            # Detach so the snapshot context retains ownership of its stream.
+            text = io.TextIOWrapper(stream, encoding="utf-8")
+            try:
+                yield text
+            finally:
+                text.detach()
+    else:
+        with path.open(encoding="utf-8") as stream:
+            yield stream

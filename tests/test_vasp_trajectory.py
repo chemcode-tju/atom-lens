@@ -21,7 +21,7 @@ class VaspTrajectoryTests(unittest.TestCase):
         return read_frames({"arguments": arguments, "_meta": {"openai/resource": {"path": str(self.path)}}})
 
     def test_first_frame_precedes_late_error(self) -> None:
-        self.path.write_bytes(header + frame + b"broken later frame\n")
+        self.path.write_bytes(header + frame + b"broken later frame\n1\n1 0 0\n0 1 0\n0 0 1\nH\ninvalid count\n")
         result = self.read(frameLimit=1)
         self.assertEqual(result["format"], "vasp")
         self.assertEqual(result["text"].encode(), header + frame)

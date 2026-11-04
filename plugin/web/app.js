@@ -271,7 +271,8 @@ window.addEventListener("message", event => {
     else if(result?.browser&&!doc)$("path-dialog").showModal();
   }
   if (message.method === "notifications/resources/updated" && message.params?.uri === fileRef?.resourceUri) {
-    loadFile(fileRef, true);
+    // Keep this opening fixed. A growing source must not reset its index/camera.
+    // Reopen explicitly to include newly written frames.
   }
   if (message.method === "ui/resource-teardown" && message.id !== undefined) {
     stop(); discardDocument(); window.parent.postMessage({ jsonrpc: "2.0", id: message.id, result: {} }, "*");
@@ -358,7 +359,7 @@ $("drift-apply").onclick=async()=>{
   }catch(error){$("drift-error").textContent=error.message;}finally{$("drift-apply").disabled=false;}
 };
 $("source-toggle").onclick = () => { stop(); $("source-panel").hidden = !$("source-panel").hidden; if(doc)$("source").value=activeRecord.text; };
-request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.13.1" }, appCapabilities: {} })
+request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.13.2" }, appCapabilities: {} })
   .then(() => { send("ui/notifications/initialized", {}); status("已连接，等待文件…"); })
   .catch(error => status(`连接失败：${error.message}`, true));
 

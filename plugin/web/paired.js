@@ -86,6 +86,7 @@ const StructurePaired = (() => {
         this.block={start:pos,bytes};
       }
       const view=new DataView(this.block.bytes,pos-this.block.start);
+      if(this.file.frozen && view.byteLength<84){this.complete=true;this.offset=this.file.size;return;}
       if(view.byteLength<84 || view.getInt32(0)!==1993 || view.getInt32(4)!==13 || view.getInt32(8)!==12 ||
          String.fromCharCode(...new Uint8Array(view.buffer,view.byteOffset+12,12))!=='GMX_trn_file')throw Error('Invalid TRR header at byte '+pos);
       const sizes=Array.from({length:10},(_,i)=>view.getInt32(24+i*4));
@@ -97,7 +98,7 @@ const StructurePaired = (() => {
          [box,vir,pres].some(s=>s && s!==9*width) || [x,v,f].some(s=>s && s!==n*3*width))throw Error('Unsupported TRR block layout');
       const start=pos+76+2*width;
       this.offset=start+sizes.reduce((a,b)=>a+b,0);
-      if(this.offset>this.file.size)throw Error('Truncated TRR frame at step '+step);
+      if(this.offset>this.file.size){if(this.file.frozen){this.complete=true;this.offset=this.file.size;return;}throw Error('Truncated TRR frame at step '+step);}
       this.complete=this.offset===this.file.size;
       if(x)this.frames.push({step,width,start,box,coords:start+box+vir+pres,n});
     }

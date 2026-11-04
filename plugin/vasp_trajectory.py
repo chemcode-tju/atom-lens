@@ -1,11 +1,12 @@
 """Read complete VASP frames progressively without a total-file size limit."""
 from typing import Any, BinaryIO
+from file_snapshot import IncompleteFrame
 
 
 def required_line(stream: BinaryIO) -> bytes:
     line = stream.readline()
     if not line:
-        raise ValueError("VASP 结构帧不完整，请等待文件写入完成后重新打开。")
+        raise IncompleteFrame("VASP 结构帧不完整，请等待文件写入完成后重新打开。")
     return line
 
 
@@ -26,7 +27,7 @@ def read_header(stream: BinaryIO, offset: int) -> tuple[list[bytes], int, bytes,
 
 
 def read_vasp_batch(stream: BinaryIO, offset: int, frame_limit: int, trajectory: bool,
-                    index_only: bool = False, header_offset: int = 0) -> dict[str, Any]:
+                    index_only: bool = False, header_offset: int = 0, frozen: bool = False) -> dict[str, Any]:
     """Keep the offset of each frame's cell header for random access."""
     if type(header_offset) is not int or not 0 <= header_offset <= offset:
         raise ValueError("无效文件偏移。")
@@ -39,36 +40,46 @@ def read_vasp_batch(stream: BinaryIO, offset: int, frame_limit: int, trajectory:
     size = 0
     while len(offsets) < frame_limit and size < (8 * 1048576 if index_only else 262144):
         start = stream.tell()
-        mode = stream.readline()
-        while mode and not mode.strip():
+        try:
             mode = stream.readline()
-        if not mode:
-            break
-        mode_offset = stream.tell() - len(mode)
-        word = mode.strip().lower().split()[0]
-        if trajectory and mode_offset != first_position and word not in {b"direct", b"cartesian", b"d", b"c", b"k", b"kartesian"}:
-            # A data batch has one header. End it before the cell changes.
-            if frames:
-                stream.seek(mode_offset)
+            while mode and not mode.strip():
+                mode = stream.readline()
+            if not mode:
                 break
-            header_offset = mode_offset
-            try:
-                header, atom_count, mode, first_position = read_header(stream, header_offset)
-            except ValueError as error:
-                raise ValueError("无法识别 VASP 坐标模式或轨迹头部") from error
-            start = first_position
-        if mode.strip()[:1].lower() not in {b"d", b"c", b"k"}:
-            raise ValueError("无法识别 VASP 坐标模式")
+            mode_offset = stream.tell() - len(mode)
+            word = mode.strip().lower().split()[0]
+            if trajectory and mode_offset != first_position and word not in {b"direct", b"cartesian", b"d", b"c", b"k", b"kartesian"}:
+                # A data batch has one header. End it before the cell changes.
+                if frames:
+                    stream.seek(mode_offset)
+                    break
+                header_offset = mode_offset
+                try:
+                    header, atom_count, mode, first_position = read_header(stream, header_offset)
+                except IncompleteFrame:
+                    raise
+                except ValueError as error:
+                    raise ValueError("无法识别 VASP 坐标模式或轨迹头部") from error
+                start = first_position
+            if mode.strip()[:1].lower() not in {b"d", b"c", b"k"}:
+                raise ValueError("无法识别 VASP 坐标模式")
+            rows = [] if index_only else [mode]
+            frame_size = len(mode)
+            for _ in range(atom_count):
+                line = required_line(stream)
+                if len(line.split()) < 3:
+                    if line.endswith(b"\n"):
+                        raise ValueError("VASP 结构帧坐标不完整。")
+                    raise IncompleteFrame("VASP 结构帧坐标不完整。")
+                frame_size += len(line)
+                if not index_only:
+                    rows.append(line)
+        except IncompleteFrame:
+            if not frozen:
+                raise
+            stream.seek(0, 2)
+            break
         header_offsets.append(header_offset)
-        rows = [] if index_only else [mode]
-        frame_size = len(mode)
-        for _ in range(atom_count):
-            line = required_line(stream)
-            if len(line.split()) < 3:
-                raise ValueError("VASP 结构帧坐标不完整。")
-            frame_size += len(line)
-            if not index_only:
-                rows.append(line)
         frame = b"".join(rows)
         if not frame.endswith(b"\n"):
             frame += b"\n"
