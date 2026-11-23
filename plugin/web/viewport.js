@@ -140,6 +140,19 @@ class StructureViews {
       });
     });
   }
+  resizeToLayout() {
+    for(const pane of this.panes){
+      clearTimeout(pane.resizeTimer);pane.resizeTimer=null;
+      cancelAnimationFrame(pane.resizeReveal);
+      const width=pane.canvas.clientWidth,height=pane.canvas.clientHeight;
+      if(!pane.element.hidden&&width>0&&height>0){
+        this.resizePane(pane,width,height,`${width}:${height}:${globalThis.devicePixelRatio||1}`);
+      }
+      // A footer toggle can also interrupt an unfinished width resize. Do not
+      // leave its stale, white-backed snapshot over the freshly painted scene.
+      pane.resizeCover?.remove();pane.resizeCover=null;
+    }
+  }
   resizePane(pane,width,height,size) {
     if(pane.lastSize===size)return;
     if(pane.projectionSize){
@@ -231,6 +244,7 @@ class StructureViews {
   }
   setMode(mode) {
     this.mode = mode;
+    const control=document.getElementById('navigation-mode');if(control)control.value=mode;
     this.container.dataset.mode = mode;
     document.querySelectorAll("[data-mode-button]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.modeButton === mode)));
   }
@@ -421,7 +435,12 @@ class StructureViews {
           const style=rule.style==='sphere'?{sphere:{radius,color}}:rule.style==='stick'?{stick:{radius:.16,color}}:{sphere:{radius:radius*.45,color},stick:{radius:.10,color}};
           const key=JSON.stringify(style);if(!groups.has(key))groups.set(key,{style,indices:[]});groups.get(key).indices.push(index);
         });
-        for(const {style,indices} of groups.values())viewer.setStyle({index:indices},style);
+        // 3Dmol checks an index array linearly for every atom (quadratic for
+        // large water boxes). Set membership keeps each style pass linear.
+        for(const {style,indices} of groups.values()){
+          const members=new Set(indices);
+          viewer.setStyle({predicate:atom=>members.has(atom.index)},style);
+        }
         model.setClickable({},true,atom=>this.onAtom(this.visibleIndices[atom.index]));
       }
       if (options.cell && frame.cell) {

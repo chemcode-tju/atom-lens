@@ -15,6 +15,12 @@
 @end
 
 @implementation SnapshotSaver
+- (NSURL *)pythonURL {
+    NSString *path = [NSBundle.mainBundle pathForResource:@"python-executable" ofType:@"txt"];
+    NSString *python = path ? [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil] : nil;
+    python = [python stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    return [NSURL fileURLWithPath:python.length ? python : @"/usr/bin/python3"];
+}
 - (void)setStatus:(NSString *)title {
     self.statusItem.button.title = title;
 }
@@ -52,8 +58,8 @@
 }
 - (id)runSetup:(NSDictionary *)request error:(NSString **)message {
     NSTask *task = [NSTask new]; NSPipe *output = [NSPipe pipe], *input = [NSPipe pipe];
-    task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/python3"];
-    task.arguments = @[[NSBundle.mainBundle pathForResource:@"connection" ofType:@"py"]];
+    task.executableURL = [self pythonURL];
+    task.arguments = @[@"-E", @"-s", @"-B", [NSBundle.mainBundle pathForResource:@"connection" ofType:@"py"]];
     task.standardInput = input; task.standardOutput = output; task.standardError = output;
     NSError *error = nil;
     if (![task launchAndReturnError:&error]) { *message = error.localizedDescription; return nil; }
@@ -172,8 +178,8 @@
         @autoreleasepool {
             NSTask *task = [NSTask new]; NSPipe *output = [NSPipe pipe]; NSPipe *input = [NSPipe pipe];
             self.connection = task;
-            task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/python3"];
-            task.arguments = @[@"-u",[NSBundle.mainBundle pathForResource:@"broker" ofType:@"py"]];
+            task.executableURL = [self pythonURL];
+            task.arguments = @[@"-E", @"-s", @"-B", @"-u", [NSBundle.mainBundle pathForResource:@"broker" ofType:@"py"]];
             task.standardOutput = output; task.standardInput = input;
             task.standardError = [NSFileHandle fileHandleWithNullDevice];
             if ([task launchAndReturnError:nil]) {

@@ -17,7 +17,7 @@ def read_header(stream: BinaryIO, offset: int) -> tuple[list[bytes], int, bytes,
         counts = [int(value) for value in header[6].split()]
     except ValueError as error:
         raise ValueError("VASP 元素计数无效；需要含元素名的 VASP 5/6 文件。") from error
-    if not counts or min(counts) < 0 or not 1 <= sum(counts) <= 100000:
+    if not counts or min(counts) < 0 or not 1 <= sum(counts) <= 1000000:
         raise ValueError("VASP 元素计数无效。")
     mode = required_line(stream)
     if mode.strip().lower().startswith(b"s"):
@@ -38,7 +38,10 @@ def read_vasp_batch(stream: BinaryIO, offset: int, frame_limit: int, trajectory:
     frames: list[bytes] = []
     offsets: list[int] = []
     size = 0
-    while len(offsets) < frame_limit and size < (8 * 1048576 if index_only else 262144):
+    # Larger idle batches amortize SSH round trips. Playing clients request
+    # at most 16 index entries and keep each background read short.
+    byte_budget = (2 if frame_limit <= 16 else 32) * 1048576 if index_only else 262144
+    while len(offsets) < frame_limit and size < byte_budget:
         start = stream.tell()
         try:
             mode = stream.readline()
@@ -67,7 +70,7 @@ def read_vasp_batch(stream: BinaryIO, offset: int, frame_limit: int, trajectory:
             frame_size = len(mode)
             for _ in range(atom_count):
                 line = required_line(stream)
-                if len(line.split()) < 3:
+                if len(line.split(None, 3)) < 3:
                     if line.endswith(b"\n"):
                         raise ValueError("VASP 结构帧坐标不完整。")
                     raise IncompleteFrame("VASP 结构帧坐标不完整。")
@@ -80,11 +83,11 @@ def read_vasp_batch(stream: BinaryIO, offset: int, frame_limit: int, trajectory:
             stream.seek(0, 2)
             break
         header_offsets.append(header_offset)
-        frame = b"".join(rows)
-        if not frame.endswith(b"\n"):
-            frame += b"\n"
         offsets.append(start)
         if not index_only:
+            frame = b"".join(rows)
+            if not frame.endswith(b"\n"):
+                frame += b"\n"
             frames.append(frame)
         size += frame_size
         if not trajectory:

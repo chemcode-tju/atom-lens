@@ -25,7 +25,7 @@ const ASETrajectory = (() => {
     return {count, async frameText(index){
       const data=await meta(index),header=data['numbers.']?data:first;
       const numbers=await array(header,'numbers'),positions=await array(data,'positions');
-      if(numbers.length!==positions.length||!numbers.length||numbers.length>100000)throw Error('ASE 原子数无效');
+      if(numbers.length!==positions.length||!numbers.length||numbers.length>1000000)throw Error('ASE 原子数无效');
       const masses=header['masses.']?await array(header,'masses'):null;
       if(masses&&(masses.length!==numbers.length||masses.some(m=>!Number.isFinite(m)||m<=0)))throw Error('ASE 原子质量无效');
       const cell=data.cell||[[0,0,0],[0,0,0],[0,0,0]],pbc=header.pbc||[false,false,false];

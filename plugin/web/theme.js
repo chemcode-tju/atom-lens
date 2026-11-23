@@ -15,6 +15,7 @@
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     const root = document.documentElement;
     root.style.setProperty("--reading-size", `${settings.fontSize}px`);
+    document.dispatchEvent(new CustomEvent("atomlens-theme-change",{detail:{mode:settings.mode,dark}}));
     return settings;
   }
   globalThis.chemistryTheme = { read, apply, save(value) {

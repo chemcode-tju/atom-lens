@@ -14,6 +14,9 @@ const gro=(step,precision=3)=>`time ${step}\n1\n${'1'.padStart(5)}${'SOL'.padEnd
   assert.deepEqual(frame.atoms.map(a=>[a.x,a.y,a.z]),[[0,0,0],[5,10,15]]);
   assert.deepEqual(frame.pbc,[true,false,true]);
   assert.deepEqual(frame.cell,[[10,0,0],[0,20,0],[0,0,30]]);
+  assert.deepEqual(frame.origin,[-2,-3,4]);
+  assert.deepEqual(frame.atoms.map(a=>a.type),['1','2']);
+  assert.equal(frame.info.step,'0');
   // Correct restricted-triclinic bounding-box correction, including a negative tilt.
   frame=parsed(md.parseDump(dump(0,'id type xs ys zs',undefined,'xy xz yz pp pp pp\n-1 13 2\n0 23 -1\n0 30 3'),meta));
   assert.deepEqual(frame.cell,[[11,0,0],[2,20,0],[-1,3,30]]);
@@ -40,6 +43,11 @@ const gro=(step,precision=3)=>`time ${step}\n1\n${'1'.padStart(5)}${'SOL'.padEnd
     assert.deepEqual(frame.cell,[[10,0,0],[0,20,0],[0,0,30]]);
   }
   const groFile=new File(Array.from({length:500},(_,i)=>gro(i/100)),'x.gro');
+  const pairedGro=parsed(md.parseGro(gro(.1),[{name:'OW',residue:'SOL',type:'opls_116',symbol:'O',mass:15.9994,charge:-.8476}]));
+  assert.equal(pairedGro.atoms[0].type,'opls_116');assert.equal(pairedGro.atoms[0].mass,15.9994);
+  assert.equal(pairedGro.atoms[0].charge,-.8476);assert.equal(pairedGro.atoms[0].residue,'SOL');
+  assert.equal(pairedGro.atoms[0].name,'OW');assert.equal(pairedGro.atoms[0].resid,'1');
+  assert.equal(parsed(md.parseGro(gro(.1))).atoms[0].type,undefined,'GRO alone must not invent force-field types');
   groFile.text=()=>{throw Error('Must not read complete GRO');};
   const groStore=(await md.open(groFile,'gromacs')).store;
   await groStore.scan(()=>{});assert.equal(groStore.count,500);

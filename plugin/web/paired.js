@@ -75,7 +75,7 @@ const StructurePaired = (() => {
   // frames without transferring velocity/force arrays or later coordinates.
   class TrrSource {
     constructor(file, topology){
-      this.pbc=topology.pbc;this.file=file;this.symbols=topology.atoms.map(element);this.frames=[];this.offset=0;this.complete=false;
+      this.pbc=topology.pbc;this.file=file;this.atoms=topology.atoms;this.symbols=topology.atoms.map(element);this.frames=[];this.offset=0;this.complete=false;
       this.block=null;
     }
     get count(){return this.frames.length;}
@@ -103,6 +103,16 @@ const StructurePaired = (() => {
       if(x)this.frames.push({step,width,start,box,coords:start+box+vir+pres,n});
     }
     async advance(limit=256){
+      if(this.file.trrIndex){
+        const result=await this.file.trrIndex(this.offset,limit);
+        if(result.nextOffset<=this.offset&&!result.eof)throw Error('Invalid TRR index progress');
+        for(const frame of result.frames){
+          if(frame.n!==this.symbols.length)throw Error('TRR/TPR atom count mismatch: '+frame.n+' / '+this.symbols.length);
+          this.frames.push(frame);
+        }
+        this.offset=result.nextOffset;this.complete=result.eof;
+        return;
+      }
       for(let i=0;i<limit&&!this.complete;i++)await this.header();
     }
     async read(index){
@@ -115,10 +125,8 @@ const StructurePaired = (() => {
       };
       const lattice=Array.from({length:box/width},(_,i)=>number(i*width));
       if(this.pbc.some(Boolean) && !lattice.some(x=>x!==0))throw Error('Periodic TRR frame is missing its cell');
-      const header=(lattice.length?'Lattice="'+lattice.join(' ')+'" ':'')+'pbc="'+this.pbc.map(p=>p?'T':'F').join(' ')+'"';
-      const rows=[String(n),header+' step='+step];
-      this.symbols.forEach((symbol,i)=>rows.push(symbol+' '+[0,1,2].map(j=>number(coords-start+(3*i+j)*width)).join(' ')));
-      return rows.join('\n')+'\n';
+      const atoms=this.atoms.map((atom,i)=>({...atom,id:i+1,elem:this.symbols[i],position:[0,1,2].map(j=>number(coords-start+(3*i+j)*width))}));
+      return StructureParser.serializeFrame(atoms,lattice.length?[lattice.slice(0,3),lattice.slice(3,6),lattice.slice(6,9)]:null,this.pbc,{source_format:'GROMACS TRR + TPR',step});
     }
   }
 
@@ -140,6 +148,25 @@ const StructurePaired = (() => {
       while(!source.complete&&!source.count)await source.advance(1);
       if(!source.count)throw Error('No coordinate frames in TRR');
       return storeFor(source,'TRR + TPR');
+    }
+    if(primary.format==='xtc'){
+      let symbols,particleMetadata,pbc=null,note='XTC + TPR';
+      if(companions.length===1&&bySuffix('.tpr').length){
+        const meta=await topology(companions[0],[]);symbols=meta.atoms.map(element);pbc=meta.pbc;particleMetadata=meta.atoms;
+      }else if(bySuffix('.gro').length===1&&companions.every(f=>/\.(gro|top|itp)$/i.test(f.name))&&bySuffix('.top').length<=1&&(!bySuffix('.itp').length||bySuffix('.top').length)){
+        const companion=bySuffix('.gro')[0];
+        const groSource=companion.openMD?await companion.openMD('gromacs'):new StructureMD.MDSource(companion,'gromacs');
+        if(!companion.openMD)await groSource.advance(1);
+        const atoms=bySuffix('.top').length?(await topology(bySuffix('.top')[0],bySuffix('.itp'))).atoms:null;
+        const text=StructureMD.parseGro(await groSource.raw(0),atoms?.map(atom=>({...atom,symbol:element(atom)})));
+        particleMetadata=new StructureParser.StructureDocument('preview.extxyz',text).frame(0).atoms;
+        symbols=particleMetadata.map(atom=>atom.elem);
+        note=atoms?'XTC + GRO + TOP':'XTC + GRO · 元素按 GRO 原子名识别';
+      }else throw Error('请选择 XTC 和对应的 TPR 或 GRO；GRO 可额外搭配 TOP。');
+      const source=new StructureXtc.Source(file,symbols,pbc,particleMetadata);
+      await source.advance(1);
+      if(!source.count)throw Error('No complete coordinate frames in XTC');
+      return storeFor(source,note);
     }
     return null;
   }

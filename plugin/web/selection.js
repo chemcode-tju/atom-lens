@@ -51,6 +51,14 @@
       }
     }
     reset(frame,indices){for(const i of indices)this.overrides.delete(i);}
+    showAll(){
+      this.hiddenElements.clear();
+      for(const [index,rule] of this.overrides){
+        const {visible,...rest}=rule;
+        if(Object.keys(rest).length)this.overrides.set(index,rest);
+        else this.overrides.delete(index);
+      }
+    }
     transition(a,b){
       const next=new Map();
       if(!this.overrides.size)return;
@@ -66,7 +74,7 @@
     }
     resolve(atom,index,defaults){
       const rule=this.overrides.get(index)||{};
-      return {...defaults,...rule,visible:!this.hiddenElements.has(atom.elem)&&rule.visible!==false};
+      return {...defaults,...rule,visible:rule.visible??!this.hiddenElements.has(atom.elem)};
     }
   }
   function inRectangle(points,start,end) {

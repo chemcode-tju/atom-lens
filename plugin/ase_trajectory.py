@@ -63,7 +63,7 @@ def read_batch(stream: BinaryIO, start: int, limit: int, index_only: bool = Fals
             raise ValueError("ASE 原子质量无效")
         cell = data.get("cell", [[0.0] * 3 for _ in range(3)])
         pbc = header_data.get("pbc", [False] * 3)
-        if not 1 <= len(numbers) <= 100000 or len(numbers) != len(positions):
+        if not 1 <= len(numbers) <= 1000000 or len(numbers) != len(positions):
             raise ValueError("ASE 原子数与坐标不一致")
         if len(cell) != 3 or any(len(row) != 3 for row in cell) or len(pbc) != 3:
             raise ValueError("ASE 晶胞或周期边界无效")

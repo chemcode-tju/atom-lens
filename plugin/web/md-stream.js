@@ -2,7 +2,7 @@
 (function(root) {
   'use strict';
   const number=value=>{if(value===undefined||String(value).trim()===''||!Number.isFinite(Number(value)))throw Error(`无效数值：${value}`);return Number(value);};
-  function count(value) {const n=number(value);if(!Number.isSafeInteger(n)||n<1||n>100000)throw Error('每帧原子数必须为 1–100000');return n;}
+  function count(value) {const n=number(value);if(!Number.isSafeInteger(n)||n<1||n>1000000)throw Error('每帧原子数必须为 1–1000000');return n;}
   function groElement(name) {
     const stripped=name.replace(/^\d+/, '');
     if(StructureLammps.element(stripped))return stripped;
@@ -10,11 +10,6 @@
     if(StructureLammps.element(two))return two;
     if(StructureLammps.element(stripped[0]))return stripped[0];
     throw Error(`无法从 GRO 原子名 ${name} 识别元素；虚拟位点/粗粒化原子不应当作真实元素`);
-  }
-  function xyz(atoms,cell,pbc,withIds=false,withMass=false) {
-    const properties='species:S:1:pos:R:3'+(withIds?':id:I:1':'')+(withMass?':mass:R:1':'');
-    const header=`Lattice="${cell.flat().join(' ')}" Properties=${properties} pbc="${pbc.map(v=>v?'T':'F').join(' ')}"`;
-    return `${atoms.length}\n${header}\n`+atoms.map(a=>`${a.elem} ${a.position.join(' ')}${withIds?' '+a.id:''}${withMass?' '+a.mass:''}`).join('\n')+'\n';
   }
   function parseGro(text, topology) {
     const lines=text.replace(/\r/g,'').trimEnd().split('\n'), n=count(lines[1]);
@@ -28,13 +23,13 @@
       const atomName=line.slice(10,15).trim(), expected=topology?.[i];
       if(expected && (expected.name.slice(0,5)!==atomName || expected.residue.slice(0,5)!==line.slice(5,10).trim()))
         throw Error("GRO/TOP atom order or name mismatch at atom "+(i+1));
-      return {elem:expected?expected.symbol:groElement(atomName),position:[0,1,2].map(i=>number(line.slice(20+i*width,20+(i+1)*width))*10)};
+      return {...expected,elem:expected?expected.symbol:groElement(atomName),id:i+1,sourceId:line.slice(15,20).trim(),name:expected?.name||atomName,residue:expected?.residue||line.slice(5,10).trim(),resid:expected?.resid??line.slice(0,5).trim(),position:[0,1,2].map(i=>number(line.slice(20+i*width,20+(i+1)*width))*10)};
     });
     const box=lines[n+2].trim().split(/\s+/).map(number);
     if(![3,9].includes(box.length))throw Error('GRO 晶胞必须包含 3 或 9 个数值');
     const cell=[[box[0],box[3]||0,box[4]||0],[box[5]||0,box[1],box[6]||0],[box[7]||0,box[8]||0,box[2]]].map(row=>row.map(v=>v*10));
     const periodic=box.some(v=>v!==0);
-    return xyz(atoms,cell,[periodic,periodic,periodic]);
+    return StructureParser.serializeFrame(atoms,cell,[periodic,periodic,periodic],{source_format:'GROMACS GRO',...(lines[0].match(/\bt\s*=\s*([\d.eE+-]+)/)?{time:lines[0].match(/\bt\s*=\s*([\d.eE+-]+)/)[1]}:{})});
   }
   function dumpHeader(text) {
     const lines=text.replace(/\r/g,'').trimEnd().split('\n');
@@ -71,7 +66,7 @@
     return {types:[...types],text:metadata,elementMap:Object.fromEntries(mappings),timestep:data.timestep};
   }
   function parseDump(text, metadata) {
-    const {lines,columns,rows,boxIndex}=dumpHeader(text);
+    const {lines,columns,rows,boxIndex,timestep}=dumpHeader(text);
     const unitsIndex=lines.indexOf('ITEM: UNITS');
     if(unitsIndex>=0 && lines[unitsIndex+1]!==metadata.units)throw Error('轨迹内 units 与配套文件不一致');
     const boxHeader=lines[boxIndex].trim().split(/\s+/).slice(3);
@@ -96,9 +91,14 @@
     const fields=candidates.find(values=>values.every(value=>columns.includes(value)));
     if(!fields)throw Error('dump 缺少支持的坐标列 x/y/z、xu/yu/zu、xs/ys/zs 或 xsu/ysu/zsu');
     const scaled=fields[0]==='xs'||fields[0]==='xsu',scale=metadata.lengthScale||1;
-    const hasIds=columns.includes('id'), seen=new Set();
+    const columnIndex=Object.fromEntries(columns.map((name,index)=>[name,index]));
+    const typeNames=new Map();
+    for(const [name,id] of Object.entries(metadata.labels||{})){
+      if(!typeNames.has(String(id)))typeNames.set(String(id),name);
+    }
+    const hasIds=columns.includes('id'), hasMass=columns.includes('mass'), hasCharge=columns.includes('q'), seen=new Set();
     const atoms=rows.map((row,index)=>{
-      const field=name=>row[columns.indexOf(name)];
+      const field=name=>row[columnIndex[name]];
       const type=field('type')||field('typelabel');
       const explicit=field('element'),label=field('typelabel');
       const symbol=StructureLammps.element(explicit)||StructureLammps.element(label)||metadata.mapping[type]||StructureLammps.element(type);
@@ -109,11 +109,11 @@
       const position=(scaled?[0,1,2].map(j=>values.reduce((sum,value,i)=>sum+value*cell[i][j],0)):values.map((v,i)=>v-origin[i])).map(v=>v*scale);
       const id=hasIds?number(field('id')):index+1;
       if(hasIds&&(!Number.isSafeInteger(id)||id<=0||seen.has(id)))throw Error('原子 ID 必须是唯一的正安全整数');seen.add(id);
-      const mass=columns.includes('mass')?number(field('mass')):metadata.masses[type]||StructureLammps.weights[symbol];
-      return {elem:symbol,position,id,mass};
+      const mass=hasMass?number(field('mass')):metadata.masses[type]||StructureLammps.weights[symbol];
+      return {elem:symbol,position,...(hasIds?{id}:{}),mass,type,typeName:label||typeNames.get(type),...(hasCharge?{charge:number(field('q'))}:{})};
     });
     if(hasIds)atoms.sort((a,b)=>a.id-b.id);
-    return xyz(atoms,cell.map(row=>row.map(v=>v*scale)),pbc,hasIds,atoms.every(a=>Number.isFinite(a.mass)&&a.mass>0));
+    return StructureParser.serializeFrame(atoms,cell.map(row=>row.map(v=>v*scale)),pbc,{source_format:'LAMMPS dump',step:timestep,cell_origin:origin.map(v=>v*scale),source_units:metadata.units||'metal'});
   }
   class MDSource {
     constructor(file,format,metadata={}) {this.file=file;this.format=format;this.metadata=metadata;this.lines=new StructureTrajectory.ByteLines(file);this.offsets=[];this.ends=[];this.count=0;this.complete=false;}
@@ -160,7 +160,7 @@
     if(format==='lammps-dump-text') {
       const first=dumpMetadata(await source.raw(0));
       source.metadata=StructureLammps.resolve([...companions,{name:file.name,text:first.text,elementMap:first.elementMap}],first.types);
-      const mappings=[...new Set(Object.entries(source.metadata.mapping).filter(([type])=>/^\d+$/.test(type)).map(([type,value])=>`${type}=${value}`))];
+      const mappings=[...new Set(Object.entries(source.metadata.mapping).filter(([type])=>first.types.includes(type)).map(([type,value])=>`${type}=${value}`))];
       note=`自动识别 ${mappings.join('、')||'dump 内的元素列'}${source.metadata.warnings.length?' · '+source.metadata.warnings.join('；'):''}`;
     }
     const store=new StructureTrajectory.FrameStore('preview.extxyz',source);await store.get(0);

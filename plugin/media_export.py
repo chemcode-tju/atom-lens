@@ -7,8 +7,10 @@ import atexit
 import base64
 import json
 import math
+import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import uuid
 
@@ -17,7 +19,8 @@ from local_export import prepare_local_file
 
 
 def ffmpeg_executable() -> str:
-    candidates = [shutil.which("ffmpeg"), "/opt/homebrew/bin/ffmpeg",
+    candidates = [os.getenv("STRUCTURE_VIEWER_FFMPEG"), str(Path(sys.prefix) / "bin/ffmpeg"),
+                  shutil.which("ffmpeg"), "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg",
                   str(Path.home() / ".local/share/structure-viewer-codecs/bin/ffmpeg"),
                   str(Path.home() / "software/miniconda3/envs/atom-draw/bin/ffmpeg"),
                   str(Path.home() / "software/miniconda3/envs/work/bin/ffmpeg")]

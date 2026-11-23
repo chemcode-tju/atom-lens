@@ -14,6 +14,18 @@ import io
 import os
 import secrets
 import stat
+import sys
+import threading
+
+
+def content_stamp(info: Any) -> tuple[int, int]:
+    """Ignore macOS ctime-only access grants; block hashes still verify content.
+
+    NSOpenPanel/Finder can asynchronously write com.apple.macl or last-used
+    extended attributes after the first frame was read. Those writes advance
+    ctime without modifying mtime or trajectory bytes.
+    """
+    return (info.st_mtime_ns, 0 if sys.platform == "darwin" else info.st_ctime_ns)
 
 
 class IncompleteFrame(ValueError):
@@ -31,13 +43,13 @@ class FileSnapshot:
         self.path = path
         self.size = info.st_size
         self.identity = (info.st_dev, info.st_ino)
-        self.modified = (info.st_mtime_ns, info.st_ctime_ns)
+        self.modified = content_stamp(info)
         self.hashes: dict[int, bytes] = {}
         self.version = f"snapshot:{secrets.token_urlsafe(24)}"
         self.invalid = False
 
     def validate(self, info: Any) -> None:
-        changed = (info.st_mtime_ns, info.st_ctime_ns) != self.modified
+        changed = content_stamp(info) != self.modified
         if (self.invalid or (info.st_dev, info.st_ino) != self.identity
                 or info.st_size < self.size or (info.st_size == self.size and changed)):
             self.invalid = True
@@ -95,6 +107,7 @@ class SnapshotReader(io.RawIOBase):
 
 
 _snapshots: OrderedDict[str, FileSnapshot] = OrderedDict()
+_snapshots_lock = threading.Lock()
 
 
 def is_snapshot(version: str | None) -> bool:
@@ -109,16 +122,17 @@ def open_snapshot(path: Path, version: str | None = None) -> Iterator[tuple[Bina
         info = os.fstat(physical.fileno())
         if not stat.S_ISREG(info.st_mode):
             raise ValueError("只能读取普通结构文件。")
-        if version is None:
-            snapshot = FileSnapshot(path, info)
-            _snapshots[snapshot.version] = snapshot
-            while len(_snapshots) > maximum_snapshots:
-                _snapshots.popitem(last=False)
-        else:
-            snapshot = _snapshots.get(version)
-            if snapshot is None or snapshot.path != path:
-                raise ValueError("文件读取会话已改变或失效；请重新打开。")
-            _snapshots.move_to_end(version)
+        with _snapshots_lock:
+            if version is None:
+                snapshot = FileSnapshot(path, info)
+                _snapshots[snapshot.version] = snapshot
+                while len(_snapshots) > maximum_snapshots:
+                    _snapshots.popitem(last=False)
+            else:
+                snapshot = _snapshots.get(version)
+                if snapshot is None or snapshot.path != path:
+                    raise ValueError("文件读取会话已改变或失效；请重新打开。")
+                _snapshots.move_to_end(version)
         snapshot.validate(info)
         snapshot.validate(path.stat())
         # Pin the boundary; hash interior blocks as indexing visits them.

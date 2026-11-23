@@ -1,7 +1,7 @@
 """Dependency-free MCP server for the native Codex file-editor entrypoint."""
 
 # Configuration
-plugin_version = "0.13.2"
+plugin_version = "0.13.3"
 resource_uri = "ui://structure-viewer/editor.html"
 
 from pathlib import Path
@@ -16,6 +16,7 @@ from md_import import import_selected
 from snapshot import save_snapshot, snapshot_context
 from local_export import prepare_local_snapshot, snapshot_save_status
 from path_access import StructurePaths
+from structure_discovery import open_selection
 from trajectory_link import create_link, resolve_link
 from media_export import MediaExports
 
@@ -24,6 +25,11 @@ media_exports = MediaExports()
 selected_paths = StructurePaths()
 
 plugin_root = Path(__file__).resolve().parent
+
+
+def localization_js() -> str:
+    return (plugin_root / "web/i18n.js").read_text().replace(
+        "/*__LOCALES__*/{}", (plugin_root / "web/locales.json").read_text())
 
 
 def widget_html() -> str:
@@ -38,6 +44,8 @@ def widget_html() -> str:
         ("<!--__ICON_SPRITE__-->", "ui-icons.svg"),
         ("/*__LAMMPS__*/", "lammps-metadata.js"),
         ("/*__MD__*/", "md-stream.js"),
+        ("/*__XTC_DECODER__*/", "vendor/xtc-decoder.js"),
+        ("/*__XTC__*/", "xtc.js"),
         ("/*__PAIRED__*/", "paired.js"),
         ("/*__IMPORT__*/", "import.js"),
         ("/*__HOST_FILES__*/", "host-files.js"),
@@ -55,6 +63,7 @@ def widget_html() -> str:
         ("/*__SCENE__*/", "scene.js"),
         ("/*__VIEWPORT__*/", "viewport.js"),
         ("/*__CONTROLS__*/", "controls.js"),
+        ("/*__INSPECTOR__*/", "inspector.js"),
         ("/*__APP__*/", "app.js"),
         ("/*__ANIMATION__*/", "animation.js"),
     ]:
@@ -62,7 +71,7 @@ def widget_html() -> str:
         if filename == "ui-icons.svg":
             asset = asset.replace("<svg ", '<svg aria-hidden="true" style="display:none" ', 1)
         if filename == "i18n.js":
-            asset = asset.replace("/*__LOCALES__*/{}", (plugin_root / "web/locales.json").read_text())
+            asset = localization_js()
         if filename == "vendor/3Dmol-min.js":
             from renderer_adapter import resize_safe_renderer, studio_lighting_renderer
             asset = studio_lighting_renderer(resize_safe_renderer(asset))
@@ -72,7 +81,7 @@ def widget_html() -> str:
 
 def tool_descriptor() -> dict[str, Any]:
     return {
-        "name": "open_structure", "title": "Structure Viewer",
+        "name": "open_structure", "title": "Atom Lens",
         "description": "Native read-only file viewer for atomic structures and trajectories.",
         "inputSchema": {
             "type": "object", "properties": {"file": {
@@ -83,7 +92,7 @@ def tool_descriptor() -> dict[str, Any]:
         "_meta": {
             "ui": {"resourceUri": resource_uri, "visibility": ["app"]},
             "openai/ui": {"entrypoints": [{"type": "file", "extensions": [
-                ".extxyz", ".xyz", ".traj", ".vasp", ".gro", ".lammpstrj", ".dump", ".data", ".lmp", ".lammps", ".pdb", ".cif", ".svtraj", ".trr"]}]},
+                ".extxyz", ".xyz", ".traj", ".vasp", ".gro", ".lammpstrj", ".dump", ".data", ".lmp", ".lammps", ".pdb", ".cif", ".svtraj", ".trr", ".xtc"]}]},
         },
     }
 
@@ -111,8 +120,8 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
             "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False},
             "_meta": {"ui": {"visibility": ["app"]}},
         }, {
-            "name": "open_structure_path", "title": "Structure Viewer",
-            "description": "Default tool for opening single or paired structures directly in the sidebar. Pass the original absolute paths together; no intermediate manifest is needed, including bare POSCAR/CONTCAR/XDATCAR, GRO, LAMMPS dumps/data, CIF and PDB. Pass matching companions for CP2K XYZ + CELL, GRO + TOP, TRR + TPR, or LAMMPS dump + data/input/log. Omit path to open the structure browser.",
+            "name": "open_structure_path", "title": "Atom Lens",
+            "description": "Open a structure file OR a calculation directory directly in the sidebar. Prefer passing the user's directory: automatically identifies trajectories and matching LAMMPS data/input metadata, CP2K XYZ + CELL, GRO + TOP, and TRR/XTC + TPR (XTC + GRO fallback). Uses bounded reads, including nearby LAMMPS metadata for continuation runs. If several datasets match, the viewer offers a choice. Optional companions override automatic pairing. Accepts absolute paths or ~/. Omit path to open the browser.",
             "inputSchema": {"type": "object", "additionalProperties": False,
                             "properties": {"path": {"type": "string"}, "companions": {"type":"array","items":{"type":"string"},"maxItems":31}}},
             "annotations": {"readOnlyHint": True, "openWorldHint": False},
@@ -134,7 +143,7 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
             "inputSchema": {"type":"object","additionalProperties":False,"required":["action"],"properties":{
                 "action":{"enum":["stat","range","frames","convert","topology"]},"token":{"type":"string"},
                 "version":{"type":"string"},"offset":{"type":"integer","minimum":0},"length":{"type":"integer","minimum":0,"maximum":1048576},
-                "indexOnly":{"type":"boolean"},"format":{"type":"string"},"text":{"type":"string"},
+                "indexOnly":{"type":"boolean"},"frameLimit":{"type":"integer","minimum":1,"maximum":4096},"format":{"type":"string"},"text":{"type":"string"},
                 "elements":{"type":"array","items":{"type":"string"}},"units":{"type":"string"},"atomStyle":{"type":"string"},"files":{"type":"array","maxItems":32,"items":{"type":"object","required":["name","data"],"properties":{"name":{"type":"string"},"data":{"type":"string"}}}}}},
             "annotations":{"readOnlyHint":True,"openWorldHint":False},"_meta":{"ui":{"visibility":["app"]}},
         }, {
@@ -199,13 +208,11 @@ def dispatch(method: str, params: dict[str, Any]) -> dict[str, Any]:
                 "structuredContent": {"file": file}}
     if method == "tools/call" and params.get("name") == "open_structure_path":
         args = params.get("arguments", {})
-        result = selected_paths.open(args.get("path"))
         companions = args.get("companions", [])
         if not isinstance(companions,list) or len(companions)>31:
             raise ValueError("请选择 1–32 个结构及配套文件")
-        if companions and "file" in result:
-            result["file"]["companions"] = [selected_paths.open(path, companion=True)["file"] for path in companions]
-        return {"content": [{"type": "text", "text": f"Structure Viewer on {result['host']}"}],
+        result = open_selection(selected_paths, args.get("path"), companions)
+        return {"content": [{"type": "text", "text": f"Atom Lens on {result['host']}"}],
                 "structuredContent": result}
     if method == "tools/call" and params.get("name") == "create_lammps_link":
         args = params["arguments"]

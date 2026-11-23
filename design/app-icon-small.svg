@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<title>Atom Lens</title>
+<rect x="100" y="100" width="824" height="824" rx="184" fill="#FAFAFA" stroke="#DCDCDC" stroke-width="2"/>
+<g transform="translate(102.4 102.4) scale(3.2)">
+<g fill="none" stroke="#505050" stroke-width="7.5">
+<ellipse cx="128" cy="128" rx="84" ry="32" transform="rotate(0 128 128)"/>
+<ellipse cx="128" cy="128" rx="84" ry="32" transform="rotate(60 128 128)"/>
+<ellipse cx="128" cy="128" rx="84" ry="32" transform="rotate(-60 128 128)"/>
+</g>
+<g fill="#202020">
+<circle cx="128" cy="128" r="11"/>
+<circle cx="212" cy="128" r="8"/>
+<circle cx="86" cy="55.254" r="8"/>
+<circle cx="86" cy="200.746" r="8"/>
+</g>
+</g>
+</svg>

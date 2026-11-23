@@ -30,6 +30,8 @@
       if (fields[i] === "species" || fields[i] === "Z") { result.species = result.width; result.atomicNumber = fields[i] === "Z"; }
       if (["id", "atom_id", "identifier"].includes(fields[i]) && width === 1) result.id = result.width;
       if (["mass", "masses", "Mass"].includes(fields[i]) && width === 1) result.mass = result.width;
+      const aliases={type:['type','atom_type','atomtype'],typeName:['type_name'],name:['name','atom_name'],residue:['residue','resname'],resid:['resid','residue_id'],sourceId:['source_id'],charge:['charge','q','initial_charges']};
+      for(const [key,names] of Object.entries(aliases))if(width===1&&names.includes(fields[i]))result[key]=result.width;
       if (fields[i] === "pos") { if (width !== 3) throw Error("pos 必须有 3 列"); result.position = result.width; }
       result.width += width;
     }
@@ -42,7 +44,7 @@
       if (!lines[start].trim()) { start++; continue; }
       if (!/^\s*\d+\s*$/.test(lines[start])) throw Error(`第 ${start + 1} 行不是原子数`);
       const count = Number(lines[start]);
-      if (!count || count > 100000) throw Error("原子数必须在 1–100000 范围内");
+      if (!count || count > 1000000) throw Error("原子数必须在 1–1000000 范围内");
       const end = start + count + 2;
       if (end > lines.length || !lines[end - 1].trim()) throw Error(`第 ${frames.length + 1} 帧不完整`);
       frames.push({ start, end, count });
@@ -66,9 +68,29 @@
       const elem = layout.atomicNumber ? elements[number(values[layout.species])] : values[layout.species].replace(/^['"]|['"]$/g, "");
       if (!elements.includes(elem) || elem === "X") throw Error(`未知元素：${elem}`);
       const [x, y, z] = values.slice(layout.position, layout.position + 3).map(number);
-      atoms.push({ elem, x, y, z, serial: i + 1, ...(layout.mass == null ? {} : {mass: number(values[layout.mass])}), ...(layout.id == null ? {} : {id: values[layout.id]}) });
+      const atom={ elem, x, y, z, serial: i + 1, ...(layout.mass == null||values[layout.mass]==='""' ? {} : {mass: number(values[layout.mass])}), ...(layout.id == null ? {} : {id: values[layout.id]}) };
+      for(const key of ['type','typeName','name','residue','resid','sourceId','charge'])if(layout[key]!=null){
+        const value=values[layout[key]];
+        if(key==='charge'&&value==='""')continue;
+        atom[key]=key==='charge'?number(value):value.startsWith('"')?JSON.parse(value):value.replace(/^'|'$/g,'');
+      }
+      atoms.push(atom);
     }
-    return { atoms, cell, pbc, info, header, layout };
+    const origin=info.cell_origin?info.cell_origin.split(/\s+/).map(number):[0,0,0];
+    if(origin.length!==3)throw Error('Cell origin requires three components');
+    return { atoms, cell, pbc, info, header, layout,origin };
+  }
+  function serializeFrame(atoms,cell,pbc,info={}) {
+    // Preserve source identities through the common XYZ transport. Force-field
+    // types remain distinct even when several types describe the same element.
+    const strings=[['type','atom_type'],['typeName','type_name'],['name','atom_name'],['residue','residue'],['resid','residue_id'],['sourceId','source_id']].filter(([key])=>atoms.some(a=>a[key]!=null));
+    const numbers=['mass','charge'].filter(key=>atoms.some(a=>Number.isFinite(a[key])));
+    const ids=atoms.every(a=>a.id!=null);
+    const properties='species:S:1:pos:R:3'+(ids?':id:I:1':'')+numbers.map(key=>`:${key}:${atoms.every(a=>Number.isFinite(a[key]))?'R':'S'}:1`).join('')+strings.map(([,key])=>`:${key}:S:1`).join('');
+    const header=(cell?'Lattice="'+cell.flat().join(' ')+'" ':'')+`Properties=${properties} pbc="${pbc.map(v=>v?'T':'F').join(' ')}"`;
+    const attributes=Object.entries(info).map(([key,value])=>`${key}=${JSON.stringify(Array.isArray(value)?value.join(' '):String(value))}`).join(' ');
+    const rows=atoms.map(a=>[a.elem,...(a.position||[a.x,a.y,a.z]),...(ids?[a.id]:[]),...numbers.map(key=>Number.isFinite(a[key])?a[key]:'""'),...strings.map(([key])=>JSON.stringify(String(a[key]??'')))].join(' '));
+    return `${atoms.length}\n${header} ${attributes}\n${rows.join('\n')}\n`;
   }
   function parseVASP(lines, trajectory) {
     const scales = vector(lines[1]);
@@ -86,7 +108,7 @@
     const counts = tokens(lines[6]).map(number);
     if (counts.length !== species.length || counts.some(n => !Number.isInteger(n) || n < 0)) throw Error("元素计数无效");
     const symbols = species.flatMap((s, i) => Array(counts[i]).fill(s));
-    if (!symbols.length || symbols.length > 100000) throw Error("原子数无效或过大");
+    if (!symbols.length || symbols.length > 1000000) throw Error("原子数无效或过大");
     let cursor = 7;
     if (/^s/i.test(lines[cursor].trim())) cursor++;
     const frames = [];
@@ -173,7 +195,7 @@
       return [...header,...chunk.lines.slice(frame.start-1,frame.end)].join(chunk.newline)+chunk.newline;
     }
   }
-  const api = { StructureDocument, ProgressiveXYZDocument, ProgressiveVASPDocument, attributes, columns, elements };
+  const api = { StructureDocument, ProgressiveXYZDocument, ProgressiveVASPDocument, attributes, columns, elements, serializeFrame };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.StructureParser = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

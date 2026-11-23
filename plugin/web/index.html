@@ -1,46 +1,97 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Structure Viewer</title>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Atom Lens</title>
 <script>/*__THEME_JS__*/</script><style>/*__THEME_CSS__*/</style><style>/*__STYLE__*/</style><style>/*__SHELL_THEME__*/</style><style>/*__CHOICES_CSS__*/</style></head>
 <body><!--__ICON_SPRITE__-->
 <main>
-  <header><h1 id="filename" data-empty-title>结构与轨迹</h1><div class="file-actions"><button id="open-path"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>按路径打开</button><button id="open-file"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>本地文件</button><input id="file-picker" type="file" multiple hidden></div>
-    <details id="interface-settings"><summary title="界面设置" aria-label="界面设置"><svg class="icon" aria-hidden="true"><use href="#i-settings"/></svg></summary>
-      <div class="settings-fields"><label>主题 <select id="theme-mode"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label><label>界面字号 <select id="theme-size"><option value="14">14</option><option value="16">16</option><option value="18">18</option><option value="20">20</option></select></label>
-    <label class="language-control" data-no-i18n>Language <select id="language" aria-label="Language"><option value="zh-CN">简体中文</option><option value="en">English</option></select></label></div>
-    </details>
+  <header><h1 id="filename" data-empty-title>结构与轨迹</h1>
+    <nav class="header-tools" aria-label="查看器工具">
+      <div id="desktop-tools" hidden>
+        <select id="desktop-host" aria-label="查看位置"></select>
+        <details id="workspace-menu" class="header-menu"><summary role="button" title="打开与连接" aria-label="打开与连接" aria-controls="workspace-actions"><svg class="icon" aria-hidden="true"><use href="#i-servers"/></svg></summary>
+          <section class="tool-card card-actions" id="workspace-actions" aria-label="打开与连接">
+            <button data-close-menu id="local-open">打开本地…</button>
+            <button data-close-menu id="browse" hidden>浏览服务器目录</button>
+            <button data-close-menu id="servers">服务器…</button>
+            <button data-close-menu id="codex"><span>Codex 插件…</span><span class="installation-status" id="codex-status"></span></button>
+          </section>
+        </details>
+      </div>
+      <details id="file-menu" class="header-menu"><summary role="button" title="文件" aria-label="文件" aria-controls="file-card"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg></summary>
+        <section id="file-card" class="tool-card" aria-label="文件选项"><h2>文件</h2>
+          <div class="card-actions"><button data-close-menu id="open-path"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>按路径打开</button><button data-close-menu id="open-file"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>本地文件</button></div><input id="file-picker" type="file" multiple hidden>
+          <label class="card-field">格式识别 <select id="import-format"><option value="auto">自动识别</option><option value="extxyz">XYZ / extxyz</option><option value="vasp">POSCAR / CONTCAR</option><option value="vasp-xdatcar">XDATCAR</option><option value="lammps-dump-text">LAMMPS dump（文本）</option><option value="lammps-data">LAMMPS data</option><option value="gromacs">GROMACS GRO</option><option value="trr">GROMACS TRR</option><option value="xtc">GROMACS XTC</option><option value="proteindatabank">PDB</option><option value="cif">CIF</option></select></label>
+          <div class="card-actions card-divider"><button data-close-menu id="source-toggle"><svg class="icon" aria-hidden="true"><use href="#i-software"/></svg>源码</button></div>
+        </section>
+      </details>
+      <details id="view-menu" class="header-menu"><summary role="button" title="显示" aria-label="显示" aria-controls="view-card"><svg class="icon" aria-hidden="true"><use href="#i-appearance"/></svg></summary>
+        <section id="view-card" class="tool-card" aria-label="显示选项"><h2>显示</h2>
+          <label class="card-field">显示方式 <select id="style" aria-label="显示方式"><option value="sphere">原子球</option><option value="ballstick">球棍</option><option value="stick">线棒</option></select></label>
+          <label class="card-field">原子配色 <select id="palette" aria-label="原子配色"><option value="jmol">Jmol</option><option value="rasmol">RasMol / CPK</option><option value="vesta">VESTA</option></select></label>
+          <label class="card-field">原子半径比例 <select id="radius-scale" aria-label="原子半径比例" title="原子半径比例"><option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.25">125%</option></select></label>
+          <div class="card-checks card-divider"><label><input id="cell" type="checkbox" checked>晶胞</label><label><input id="labels" type="checkbox">序号</label><label><input id="hbonds" type="checkbox">氢键</label><label><input id="wrap" type="checkbox">Wrap</label></div>
+          <div class="card-actions card-divider"><button data-close-menu id="display-settings"><svg class="icon" aria-hidden="true"><use href="#i-appearance"/></svg>显示设置</button><button data-close-menu id="drift-settings" disabled><svg class="icon" aria-hidden="true"><use href="#i-drift"/></svg>质心漂移校正</button></div>
+        </section>
+      </details>
+      <details id="export-menu" class="header-menu"><summary role="button" title="导出" aria-label="导出" aria-controls="export-card"><svg class="icon" aria-hidden="true"><use href="#i-snapshot"/></svg></summary>
+        <section id="export-card" class="tool-card" aria-label="导出选项"><h2>导出</h2>
+          <p class="empty-export">请先打开结构</p><div class="card-actions"><button data-close-menu id="snapshot"><svg class="icon" aria-hidden="true"><use href="#i-snapshot"/></svg>快照</button><button data-close-menu id="animation-export"><svg class="icon" aria-hidden="true"><use href="#i-timeline"/></svg>导出动画</button></div>
+        </section>
+      </details>
+      <details id="interface-settings" class="header-menu"><summary role="button" title="界面设置" aria-label="界面设置" aria-controls="settings-card"><svg class="icon" aria-hidden="true"><use href="#i-settings"/></svg></summary>
+        <section id="settings-card" class="tool-card" aria-label="界面设置"><h2>界面设置</h2>
+          <label class="card-field">主题 <select id="theme-mode"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label>
+          <label class="card-field">界面字号 <select id="theme-size"><option value="14">14</option><option value="16">16</option><option value="18">18</option><option value="20">20</option></select></label>
+          <label class="card-field language-control" data-no-i18n>Language <select id="language" aria-label="Language"><option value="zh-CN">简体中文</option><option value="en">English</option></select></label>
+        </section>
+      </details>
+    </nav>
   </header>
-  <details id="viewer-options"><summary>查看选项</summary>
-    <div class="viewer-option-body">
-      <div class="file-actions"><button id="display-settings"><svg class="icon" aria-hidden="true"><use href="#i-appearance"/></svg>显示设置</button><button id="drift-settings" disabled><svg class="icon" aria-hidden="true"><use href="#i-drift"/></svg>质心漂移校正</button><button id="snapshot"><svg class="icon" aria-hidden="true"><use href="#i-snapshot"/></svg>快照</button><button id="animation-export"><svg class="icon" aria-hidden="true"><use href="#i-timeline"/></svg>导出动画</button><button id="source-toggle"><svg class="icon" aria-hidden="true"><use href="#i-software"/></svg>源码</button></div>
-      <div class="toolbar">
-    <label>格式 <select id="import-format"><option value="auto">自动识别</option><option value="extxyz">XYZ / extxyz</option><option value="vasp">POSCAR / CONTCAR</option><option value="vasp-xdatcar">XDATCAR</option><option value="lammps-dump-text">LAMMPS dump（文本）</option><option value="lammps-data">LAMMPS data</option><option value="gromacs">GROMACS GRO</option><option value="trr">GROMACS TRR</option><option value="proteindatabank">PDB</option><option value="cif">CIF</option></select></label>
-    <select id="style" aria-label="显示方式"><option value="sphere">原子球</option><option value="ballstick">球棍</option><option value="stick">线棒</option></select>
-    <select id="palette" aria-label="原子配色"><option value="jmol">Jmol</option><option value="rasmol">RasMol / CPK</option><option value="vesta">VESTA</option></select>
-    <select id="radius-scale" aria-label="原子半径比例" title="原子半径比例"><option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.25">125%</option></select>
-    <label><input id="cell" type="checkbox" checked>晶胞</label><label><input id="labels" type="checkbox">序号</label><label><input id="hbonds" type="checkbox">氢键</label><label><input id="wrap" type="checkbox">Wrap</label>
-  </div>
-    </div>
-  </details>
   <div id="status" role="alert" hidden></div>
-  <div id="viewports" class="viewports" data-layout="single" data-mode="rotate"><button id="open-empty" type="button"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>打开结构文件</button></div>
+  <div id="viewports" class="viewports" data-layout="single" data-mode="rotate"><section id="atom-panel" hidden><strong id="atom-title"></strong><output id="measurement"></output><span id="atom-list"></span><button id="clear-selection" disabled>清除选择</button></section><button id="open-empty" type="button"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>打开结构文件</button></div>
 
   <section id="source-panel" hidden><div class="section-head"><strong id="source-title">当前帧源码</strong></div><p id="import-note"></p><textarea id="source" readonly spellcheck="false" aria-label="当前结构源码"></textarea></section>
   <footer>
-    <details id="trajectory-tools">
-      <summary><svg class="icon" aria-hidden="true"><use href="#i-timeline"/></svg><span>轨迹与视图</span><span id="selected-summary" hidden></span><span id="frame-summary" data-no-i18n></span><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></summary>
-      <div class="trajectory-body">
-        <div class="timeline-row">
-          <div class="frame-label"><input id="frame-number" type="number" min="1" value="1" aria-label="帧号"><span id="frame-count"><span aria-hidden="true">/</span><span id="frame-total">—</span></span></div>
-          <div class="ruler"><div id="ticks" aria-hidden="true"></div><input id="timeline" type="range" min="0" max="0" value="0" aria-label="轨迹帧滑块" disabled></div>
-        </div>
-        <div class="control-row">
-          <div class="playback" role="group" aria-label="轨迹播放"><button type="button" id="first" aria-label="第一帧" title="第一帧"><svg class="icon" aria-hidden="true"><use href="#i-first"/></svg></button>
+    <section id="structure-inspector" hidden aria-label="结构信息">
+      <div class="inspector-heading"><div role="tablist" aria-label="结构信息分类">
+        <button id="particles-tab" role="tab" aria-selected="true" aria-controls="inspector-content" data-inspector-tab="particles">粒子</button>
+        <button id="types-tab" role="tab" aria-selected="false" aria-controls="inspector-content" data-inspector-tab="types" tabindex="-1">类型</button>
+        <button id="cell-tab" role="tab" aria-selected="false" aria-controls="inspector-content" data-inspector-tab="cell" tabindex="-1">晶胞</button>
+      </div><span id="inspector-frame" data-no-i18n></span><button id="inspector-close" aria-label="关闭结构信息" title="关闭结构信息">×</button></div>
+      <div class="inspector-filters"><input id="particle-filter" type="search" placeholder="筛选编号、类型、元素、原子名" aria-label="筛选粒子"><label><input id="inspector-selected" type="checkbox">仅选中</label>
+        <select id="cell-mode" aria-label="晶胞显示方式" hidden><option value="vectors">晶胞向量</option><option value="parameters">晶胞参数</option></select>
+        <span id="inspector-count" data-no-i18n></span>
+        <button id="inspector-previous" aria-label="上一页" title="上一页">‹</button><button id="inspector-next" aria-label="下一页" title="下一页">›</button>
+      </div>
+      <div id="inspector-content" role="tabpanel" aria-labelledby="particles-tab" tabindex="0"></div>
+      <p id="inspector-note"></p>
+    </section>
+    <div class="bottom-toolbar">
+      <div id="trajectory-tools">
+        <div class="ruler"><div id="ticks" aria-hidden="true"></div><input id="timeline" type="range" min="0" max="0" value="0" aria-label="轨迹帧滑块" disabled></div>
+        <div class="transport"><div class="playback" role="group" aria-label="轨迹播放"><button type="button" id="first" aria-label="第一帧" title="第一帧"><svg class="icon" aria-hidden="true"><use href="#i-first"/></svg></button>
           <button type="button" id="previous" aria-label="上一帧" title="上一帧"><svg class="icon" aria-hidden="true"><use href="#i-previous"/></svg></button>
           <button type="button" id="play" aria-label="播放轨迹" title="播放轨迹"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg></button>
           <button type="button" id="next" aria-label="下一帧" title="下一帧"><svg class="icon" aria-hidden="true"><use href="#i-next"/></svg></button>
           <button type="button" id="last" aria-label="最后一帧" title="最后一帧"><svg class="icon" aria-hidden="true"><use href="#i-last"/></svg></button>
-          <button type="button" id="playback-settings" aria-label="播放设置" title="播放设置"><svg class="icon" aria-hidden="true"><use href="#i-speed"/></svg></button></div>
-          <div class="view-controls"><span class="orientation-control"><select id="orientation" aria-label="视图方向">
+</div>
+          <div class="frame-tools"><div class="frame-label"><input id="frame-number" type="number" min="1" value="1" aria-label="帧号"><span aria-hidden="true">/</span><span id="frame-total">—</span></div><details id="playback-menu" class="bottom-menu"><summary id="playback-settings" role="button" title="播放设置" aria-label="播放设置"><svg class="icon" aria-hidden="true"><use href="#i-speed"/></svg></summary>
+        <section id="playback-dialog" class="tool-card"><h2>播放设置</h2>
+          <label class="card-field">每秒帧数 <input id="animation-fps" type="number" min="1" max="120" step="1" value="60"></label>
+          <label class="card-field">播放速度 <select id="playback-speed"><option value="0.25">× 0.25</option><option value="0.5">× 0.5</option><option value="1" selected>× 1</option><option value="2">× 2</option><option value="5">× 5</option><option value="10">× 10</option><option value="20">× 20</option></select></label>
+          <label class="card-field">每隔 N 帧播放 <input id="playback-step" type="number" min="1" max="10000" step="1" value="1"></label>
+          <label class="check-row"><input id="playback-loop" type="checkbox" checked>循环播放</label>
+        </section></details></div>
+        </div>
+      </div>
+      <div class="view-tools"><div class="navigation" role="group" aria-label="视图操作"><button type="button" id="rotate" data-mode-button="rotate" aria-pressed="true" aria-label="旋转" title="旋转"><svg class="icon" aria-hidden="true"><use href="#i-rotate"/></svg></button>
+          <button type="button" id="pan" data-mode-button="pan" aria-pressed="false" aria-label="平移" title="平移"><svg class="icon" aria-hidden="true"><use href="#i-pan"/></svg></button>
+          <button type="button" id="zoom" data-mode-button="zoom" aria-pressed="false" aria-label="缩放" title="缩放"><svg class="icon" aria-hidden="true"><use href="#i-zoom"/></svg></button>
+          <button type="button" id="select" data-mode-button="select" aria-pressed="false" aria-label="选择原子" title="选择原子"><svg class="icon" aria-hidden="true"><use href="#i-cursor"/></svg></button>
+          <button type="button" id="box" data-mode-button="box" aria-pressed="false" aria-label="框选原子" title="框选原子"><svg class="icon" aria-hidden="true"><use href="#i-box"/></svg></button>
+          <button type="button" id="reset" aria-label="适应视图" title="适应视图"><svg class="icon" aria-hidden="true"><use href="#i-fit"/></svg></button>
+</div>
+        <div class="view-rail"><details id="viewport-menu" class="bottom-menu"><summary role="button" title="视图" aria-label="视图"><svg class="icon" aria-hidden="true"><use href="#i-multi-view"/></svg></summary>
+          <section class="tool-card"><h2>视图</h2><div id="view-control-fields"><span class="orientation-control"><select id="orientation" aria-label="视图方向">
             <option value="xy" data-shortcut="Z" aria-label="Top · XY (+Z)">Top · XY</option>
             <option value="bottom" data-shortcut="⌥Z" aria-label="Bottom · XY (−Z)">Bottom · XY</option>
             <option value="back" data-shortcut="Y" aria-label="Back · XZ (+Y)">Back · XZ</option>
@@ -49,17 +100,13 @@
             <option value="yz" data-shortcut="⌥X" aria-label="Left · YZ (−X)">Left · YZ</option>
             <option value="perspective">Perspective</option>
           </select><kbd id="orientation-key" class="view-shortcut" aria-hidden="true">⌥Y</kbd></span><select id="layout" aria-label="视图布局"><option value="single">单视图</option><option value="dual">双视图</option><option value="quad">四视图</option></select></div>
-          <div class="navigation" role="group" aria-label="视图操作"><button type="button" id="rotate" data-mode-button="rotate" aria-pressed="true" aria-label="旋转" title="旋转"><svg class="icon" aria-hidden="true"><use href="#i-rotate"/></svg></button>
-          <button type="button" id="pan" data-mode-button="pan" aria-pressed="false" aria-label="平移" title="平移"><svg class="icon" aria-hidden="true"><use href="#i-pan"/></svg></button>
-          <button type="button" id="zoom" data-mode-button="zoom" aria-pressed="false" aria-label="缩放" title="缩放"><svg class="icon" aria-hidden="true"><use href="#i-zoom"/></svg></button>
-          <button type="button" id="select" data-mode-button="select" aria-pressed="false" aria-label="选择原子" title="选择原子"><svg class="icon" aria-hidden="true"><use href="#i-cursor"/></svg></button>
-          <button type="button" id="box" data-mode-button="box" aria-pressed="false" aria-label="框选原子" title="框选原子"><svg class="icon" aria-hidden="true"><use href="#i-box"/></svg></button>
-          <button type="button" id="reset" aria-label="适应视图" title="适应视图"><svg class="icon" aria-hidden="true"><use href="#i-fit"/></svg></button>
-          <button type="button" id="expand" aria-label="展开 / 恢复多视图" title="展开 / 恢复多视图"><svg class="icon" aria-hidden="true"><use href="#i-expand"/></svg></button></div>
+            <label class="card-field">鼠标操作 <select id="navigation-mode"><option value="rotate">旋转</option><option value="pan">平移</option><option value="zoom">缩放</option><option value="select">选择原子</option><option value="box">框选原子</option></select></label>
+            <div class="card-actions"><button id="view-reset">适应视图</button><button type="button" id="expand" aria-label="展开 / 恢复多视图" title="展开 / 恢复多视图"><svg class="icon" aria-hidden="true"><use href="#i-expand"/></svg><span>展开 / 恢复多视图</span></button></div>
+          </section></details>
+          <button id="inspector-toggle" title="结构信息" aria-label="结构信息" aria-expanded="false" aria-controls="structure-inspector"><svg class="icon" aria-hidden="true"><use href="#i-table"/></svg></button>
         </div>
-        <section id="atom-panel" hidden><strong id="atom-title"></strong><output id="measurement"></output><span id="atom-list"></span><button id="clear-selection" disabled>清除选择</button></section>
       </div>
-    </details>
+    </div>
   </footer>
 </main>
 <dialog id="drift-dialog" class="floating-panel"><h2>质心漂移校正</h2><fieldset>
@@ -82,16 +129,8 @@
   </fieldset>
   <div class="dialog-actions"><button id="reset-display">恢复所有显示设置</button><button id="display-close">关闭</button></div>
 </dialog>
-<dialog id="playback-dialog">
-  <form method="dialog"><h2>播放设置</h2>
-  <fieldset><legend>动画</legend><label>每秒帧数 <input id="animation-fps" type="number" min="1" max="120" value="60"></label></fieldset>
-  <fieldset><legend>视窗内播放</legend>
-  <label>播放速度 <select id="playback-speed"><option value="0.25">× 0.25</option><option value="0.5">× 0.5</option><option value="1" selected>× 1</option><option value="2">× 2</option><option value="5">× 5</option><option value="10">× 10</option><option value="20">× 20</option></select></label>
-  <label>每隔 N 帧播放 <input id="playback-step" type="number" min="1" max="10000" value="1"></label>
-  <label class="check-row"><input id="playback-loop" type="checkbox" checked>循环播放</label></fieldset>
-  <div class="dialog-actions"><button value="cancel">取消</button><button id="playback-apply" value="default">确定</button></div></form>
-</dialog>
-<dialog id="path-dialog"><h2>打开结构文件</h2><label for="structure-path" id="path-host">当前主机上的完整路径</label><input id="structure-path" type="text" placeholder="/完整路径/POSCAR" autocomplete="off" spellcheck="false"><label for="companion-paths">配套文件路径（每行一个，可留空）</label><textarea id="companion-paths" rows="2"></textarea><output id="path-error" role="alert"></output><div class="dialog-actions"><button id="path-close">关闭</button><button id="path-load">打开</button></div></dialog>
+<dialog id="path-dialog"><h2>打开文件或目录</h2><label for="structure-path" id="path-host">当前主机上的完整路径</label><input id="structure-path" type="text" placeholder="~/计算目录/ 或 /完整路径/轨迹文件" autocomplete="off" spellcheck="false"><details><summary>高级：手动指定配套文件</summary><label for="companion-paths">配套文件路径（每行一个，可留空）</label><textarea id="companion-paths" rows="2"></textarea></details><output id="path-error" role="alert"></output><div class="dialog-actions"><button id="path-close">关闭</button><button id="path-load">打开</button></div></dialog>
+<dialog id="discovery-dialog"><h2>选择要查看的结构</h2><p id="discovery-path"></p><select id="discovery-options" aria-label="自动识别结果"></select><div class="dialog-actions"><button id="discovery-close">取消</button><button id="discovery-open">打开</button></div></dialog>
 <dialog id="snapshot-dialog">
   <h2>保存快照</h2>
   <div class="snapshot-preview"><img id="snapshot-preview" alt="当前构型快照" hidden></div>
@@ -114,5 +153,5 @@
 <label id="animation-directory-row">目录<input id="animation-directory" placeholder="结构所在目录"></label></fieldset>
 <output id="animation-result"></output><div class="dialog-actions"><button id="animation-close">关闭</button><button id="animation-save">导出并保存</button></div></dialog>
 <script>/*__I18N__*/</script><script>/*__3DMOL__*/</script><script>/*__PARSER__*/</script><script>/*__APPEARANCE__*/</script><script>/*__GEOMETRY__*/</script><script>/*__ASE_TRAJ__*/
-/*__VASP_STREAM__*/</script><script>/*__TRAJECTORY_STORE__*/</script><script>/*__SNAPSHOT__*/</script><script>/*__SELECTION__*/</script><script>/*__SCENE__*/</script><script>/*__VIEWPORT__*/</script><script>/*__CONTROLS__*/</script><script>/*__LAMMPS__*/</script><script>/*__MD__*/</script><script>/*__PAIRED__*/</script><script>/*__IMPORT__*/</script><script>/*__HOST_FILES__*/</script><script>/*__APP__*/</script><script>/*__ANIMATION__*/</script>
+/*__VASP_STREAM__*/</script><script>/*__TRAJECTORY_STORE__*/</script><script>/*__SNAPSHOT__*/</script><script>/*__SELECTION__*/</script><script>/*__SCENE__*/</script><script>/*__VIEWPORT__*/</script><script>/*__CONTROLS__*/</script><script>/*__INSPECTOR__*/</script><script>/*__LAMMPS__*/</script><script>/*__MD__*/</script><script>/*__XTC_DECODER__*/</script><script>/*__XTC__*/</script><script>/*__PAIRED__*/</script><script>/*__IMPORT__*/</script><script>/*__HOST_FILES__*/</script><script>/*__APP__*/</script><script>/*__ANIMATION__*/</script>
 <script type="module">/*__CHOICES_JS__*/</script></body></html>

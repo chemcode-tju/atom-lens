@@ -1,13 +1,16 @@
 """Use real append/overwrite operations through the same MCP routes as the UI."""
 from pathlib import Path
 import sys
+import os
+import struct
+import subprocess
 import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'plugin'))
 import server
 from file_snapshot import block_size, open_snapshot
-from trajectory import read_frames
+from trajectory import read_frames, file_version
 
 DUMP = ('ITEM: TIMESTEP\n0\nITEM: NUMBER OF ATOMS\n1\n'
         'ITEM: BOX BOUNDS pp pp ff\n0 10\n0 10\n0 10\n'
@@ -29,6 +32,23 @@ class SnapshotTests(unittest.TestCase):
 
     def token(self, path: Path) -> str:
         return self.call('open_structure_path', path=str(path))['file']['token']
+
+    def test_trr_index_skips_velocity_only_frames_and_excludes_incomplete_tail(self) -> None:
+        def frame(step: int, width: int, has_coordinates: bool) -> bytes:
+            sizes = (0, 0, 9 * width, 0, 0, 0, 0, 3 * width if has_coordinates else 0, 3 * width, 0)
+            return (struct.pack('>3i', 1993, 13, 12) + b'GMX_trn_file'
+                    + struct.pack('>13i', *sizes, 1, step, 0) + bytes(2 * width + sum(sizes)))
+
+        path = self.root / 'run.trr'
+        initial, velocity, final = frame(10, 4, True), frame(11, 8, False), frame(12, 8, True)
+        path.write_bytes(initial + velocity + final + frame(13, 4, True)[:-3])
+        with path.open('rb') as stream:
+            from md_import import read_md_index
+            first = read_md_index(stream, 'trr', 0, True, frozen=True, frame_limit=2)
+            rest = read_md_index(stream, 'trr', first['nextOffset'], True, frozen=True)
+        self.assertEqual(first['nextOffset'], len(initial) + len(velocity))
+        self.assertEqual([(item['step'], item['width']) for item in first['frames'] + rest['frames']], [(10, 4), (12, 8)])
+        self.assertTrue(rest['eof'])
 
     def test_md_append_while_indexing_and_after_eof(self) -> None:
         for name, fmt, frame in [('run.dump', 'lammps-dump-text', DUMP), ('run.gro', 'gromacs', GRO)]:
@@ -127,6 +147,27 @@ class SnapshotTests(unittest.TestCase):
                     with open_snapshot(path, snapshot.version) as (stream, _):
                         stream.seek(block_size * 2)
                         stream.read(1)
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'macOS native file panel metadata')
+    def test_native_metadata_changes_do_not_invalidate_content(self) -> None:
+        path = self.root / 'metadata.xyz'
+        path.write_text(XYZ * 3)
+        token = self.token(path)
+        first = self.call('read_trajectory_frames', token=token, frameLimit=1)
+        original = path.stat()
+        fingerprint = file_version(original)
+        subprocess.run(['/usr/bin/xattr', '-w', 'com.atomlens.test-lastused', 'updated', str(path)], check=True)
+        self.assertEqual(path.stat().st_mtime_ns, original.st_mtime_ns)
+        self.assertNotEqual(path.stat().st_ctime_ns, original.st_ctime_ns)
+        self.assertEqual(file_version(path.stat()), fingerprint)
+        second = self.call('read_trajectory_frames', token=token, version=first['version'],
+                           offset=first['nextOffset'], frameLimit=1)
+        self.assertEqual(second['text'], XYZ)
+        # Even if a writer restores mtime, previously observed bytes must match.
+        path.write_text(XYZ.replace('H 0', 'H 1') * 3)
+        os.utime(path, ns=(original.st_atime_ns, original.st_mtime_ns))
+        with self.assertRaisesRegex(ValueError, '改变'):
+            self.call('read_trajectory_frames', token=token, version=first['version'], frameLimit=1)
 
 
 if __name__ == '__main__':

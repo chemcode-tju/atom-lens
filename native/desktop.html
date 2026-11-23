@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Atom Lens</title>
+<script src="theme.js"></script><link rel="stylesheet" href="theme.css">
+<style>
+:root{font:13px -apple-system,BlinkMacSystemFont,sans-serif;background:var(--surface, Canvas);color:var(--text, CanvasText)}*{box-sizing:border-box}body{margin:0;height:100vh;display:flex;flex-direction:column;overflow:hidden}button,input,select{font:inherit;color:inherit}button{border:1px solid color-mix(in srgb,CanvasText 20%,transparent);border-radius:6px;padding:6px 10px;background:var(--surface, Canvas);cursor:pointer}button:hover{background:color-mix(in srgb,CanvasText 7%,Canvas)}button:disabled{opacity:.45;cursor:default}.primary{background:CanvasText;color:Canvas}.spacer{flex:1}.muted{color:GrayText}#notice{flex-shrink:0;max-height:100px;overflow:auto;margin:0;padding:8px 16px;border-bottom:1px solid #aaa;white-space:pre-wrap}#notice:empty{display:none}iframe[hidden]{display:none}iframe{display:block;border:0;width:100%;flex:1;min-height:0}dialog{padding:24px;border:1px solid #8886;border-radius:12px;width:620px;max-width:92vw;max-height:88vh;background:var(--surface, Canvas);color:var(--text, CanvasText)}dialog::backdrop{background:#0004}h2{font-size:18px;margin:0 0 18px}label{display:block;margin:12px 0 6px}input[type=text],select{width:100%;padding:8px;border:1px solid #8886;border-radius:5px;background:Canvas}.row{display:flex;align-items:center;gap:8px}.row input{flex:1}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}.status{white-space:pre-wrap;max-height:150px;overflow:auto;line-height:1.5}.hidden{display:none!important}
+#server-dialog{--rule:color-mix(in srgb,var(--text, CanvasText) 14%,transparent);--surface:color-mix(in srgb,CanvasText 4%,Canvas);width:720px;padding:0}
+#server-dialog[open]{display:flex;flex-direction:column;overflow:hidden}
+.server-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;flex-shrink:0;gap:8px;padding:16px 20px;border-bottom:1px solid var(--rule)}
+.server-heading h2{margin:0;font-size:16px}.server-heading p{margin:0;padding:4px 8px;background:var(--surface);border-radius:5px;font-weight:500;overflow-wrap:anywhere}
+.server-grid{display:grid;grid-template-columns:minmax(180px, 34%) minmax(0,1fr);gap:0;overflow-y:auto;min-height:0}
+.server-directory{padding:16px;background:var(--surface);border-right:1px solid var(--rule)}
+.server-grid label{color:CanvasText;margin:0 0 5px;font-weight:500}.server-grid input[type=text]{min-width:0}
+.server-list-actions{margin-top:8px;flex-wrap:wrap}#server-list{height:180px;padding:5px;border-color:var(--rule)}#server-list option{padding:5px}#server-list optgroup{font-weight:600}#server-list option{font-weight:400}
+.server-fields{display:grid;align-content:start;gap:12px;padding:16px 20px;min-width:0}
+.server-fields summary{cursor:pointer;font-weight:500;padding:4px 0}.server-advanced{display:grid;gap:10px;margin-top:8px}
+.server-advanced button{flex-shrink:0}#server-dialog .server-checkbox{display:flex;align-items:center;gap:5px;margin:0}
+.server-footer{flex-shrink:0;padding:12px 20px;border-top:1px solid var(--rule)}.server-footer .actions{margin:0;flex-wrap:wrap;align-items:center}
+#server-status{margin:0 0 10px;padding:8px 10px;background:var(--surface);border-radius:5px;overflow-wrap:anywhere}#server-status:empty{display:none}
+@media(max-width:550px){.server-grid{grid-template-columns:1fr}.server-directory{border-right:0;border-bottom:1px solid var(--rule)}#server-list{height:110px}.server-footer .spacer{display:none}}
+#browser-dialog{--file-border:color-mix(in srgb,var(--text, CanvasText) 15%,transparent);--file-hover:color-mix(in srgb,CanvasText 7%,Canvas);width:680px;padding:16px 20px}
+#browser-dialog[open]{display:flex;flex-direction:column;gap:10px;overflow:hidden}
+#browser-dialog h2,#browser-dialog .actions{margin:0;flex-shrink:0}
+#browser-dialog .actions{flex-wrap:wrap}
+.file-browser-toolbar input{min-width:0}.file-browser-toolbar button{flex-shrink:0}
+.file-browser-tree{min-height:72px;height: min(47vh,390px);overflow:auto;padding:4px 6px 8px;scrollbar-gutter:stable;border:1px solid var(--file-border);border-radius:6px}
+.file-browser-tree ul{margin:0;padding:0;list-style:none}
+.file-tree-children{margin-inline-start:12px;padding-inline-start:5px;border-inline-start:1px solid var(--file-border)}
+.file-browser-row,.file-browser-entry{display:flex;align-items:center;gap:6px;min-width:0}
+.file-browser-entry{flex:1;min-height:32px;padding:4px 6px;margin:0;border:0;border-radius:5px;background:transparent;text-align:start}
+.file-browser-row:hover,.file-browser-row:has(:checked){background:var(--file-hover);border-radius:5px}
+.file-browser-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-browser-icon{flex:none;display:block;width:16px;height:16px;color:color-mix(in srgb,CanvasText 74%,Canvas)}
+.file-folder-toggle,.file-tree-indent{flex:0 0 24px}
+.file-folder-toggle{border:0;padding:4px;background:transparent}
+.file-folder-toggle[aria-expanded=true] .file-browser-icon{transform:rotate(90deg)}
+.file-browser-entry input{margin:0}.file-browser-tree .status{padding:0 8px}.file-browser-tree .file-tree-more{margin:4px 8px}
+#browser-status{margin:0}#browser-status:empty{display:none}
+:root[data-theme=light]{color-scheme:light}
+:root[data-theme=dark]{color-scheme:dark}
+</style></head><body>
+
+<p id="notice" role="status">正在启动 Atom Lens…</p><iframe id="viewer" title="原子结构与轨迹查看器" hidden></iframe>
+<dialog id="server-dialog" aria-labelledby="server-title">
+<div class="server-heading"><h2 id="server-title">连接服务器</h2><p id="connection-status">当前查看：本地 Mac</p></div>
+<div class="server-grid">
+<div class="server-directory"><label for="server-list">服务器</label>
+<select id="server-list" size="8"><option value="" disabled selected>选择服务器…</option></select>
+<div class="row server-list-actions"><button id="server-new">新增</button><button id="server-remove" disabled>移除配置</button></div></div>
+<div class="server-fields">
+<div><label for="ssh-host">SSH 主机</label><input id="ssh-host" type="text" placeholder="nd3 或 user@host"></div>
+<div><label for="server-name">显示名称</label><input id="server-name" type="text" maxlength="80" placeholder="可选"></div>
+<details id="server-advanced"><summary>高级设置</summary><div class="server-advanced">
+<div><label for="ssh-config">SSH 配置文件</label><div class="row"><input id="ssh-config" type="text" value="~/.ssh/config"><button id="refresh-hosts">读取主机</button></div></div>
+<div><label for="ssh-python">服务器 Python（3.9+）</label><input id="ssh-python" type="text" value="python3"></div>
+<label class="server-checkbox"><input id="remote-codex" type="checkbox"> 同时安装服务器 Codex 插件 <span id="remote-codex-status"></span></label>
+</div></details></div></div>
+<div class="server-footer"><p id="server-status" class="status" role="status"></p>
+<div class="actions"><button id="check">检查环境</button><button id="deploy">安装／更新</button><button id="disconnect" disabled title="断开所选服务器">断开</button><span class="spacer"></span><button id="server-save">保存配置</button><button id="server-close">关闭</button><button id="connect" class="primary">连接</button></div></div></dialog>
+<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" width="0" height="0" style="position:absolute">
+<symbol id="browser-i-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6" /></symbol>
+<symbol id="browser-i-chevron-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6" /></symbol>
+<symbol id="browser-i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></symbol>
+<symbol id="browser-i-folder-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" /></symbol>
+<symbol id="browser-i-document" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
+  <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+  <path d="M10 9H8" />
+  <path d="M16 13H8" />
+  <path d="M16 17H8" /></symbol>
+</svg>
+<dialog id="browser-dialog" aria-labelledby="browser-title"><h2 id="browser-title">浏览文件</h2>
+<div class="row file-browser-toolbar"><button id="up" title="上一级" aria-label="上一级"><svg class="file-browser-icon" aria-hidden="true"><use href="#browser-i-chevron-left"/></svg></button><input id="directory" aria-label="目录路径" type="text" value="~" spellcheck="false"><button id="go">前往</button></div>
+<div id="files" class="file-browser-tree"></div><p id="browser-status" class="status" role="status"></p>
+<div class="actions"><button id="browser-close">取消</button><button id="browser-open" disabled>打开所选文件</button><button id="browser-folder" class="primary" disabled>打开此目录</button></div></dialog>
+<dialog id="primary-dialog"><h2>选择主结构文件</h2><select id="primary-path" aria-label="主结构文件"></select><div class="actions"><button id="primary-close">取消</button><button id="primary-open" class="primary">打开</button></div></dialog>
+<script src="i18n.js"></script>
+<script>
+'use strict';
+const $=id=>document.getElementById(id),initialViewer=$('viewer'),viewers=new Map();
+let state,nextNative=0,switching=false;
+let localCodex=null;
+let directoryPage,directoryGeneration=0,selected=new Set(),openCandidates=[];
+let savedProfiles=[],sshHosts=[],selectedProfileId=null,serverSelection='',hostRequest=0,serverListKey='';
+const nativeCalls=new Map();
+async function api(route,body={}){
+ const response=await fetch(new URL(route,location.href),{method:'POST',headers:{'Content-Type':'application/json','X-Atom-Lens':'desktop'},body:JSON.stringify(body)});
+ const result=await response.json();if(!response.ok)throw Error(result.error||'请求失败');return result;
+}
+function native(action){
+ return new Promise((resolve,reject)=>{
+  if(!window.webkit?.messageHandlers?.atomLens){reject(Error('此操作需要在 Atom Lens Mac App 中使用'));return;}
+  const id=++nextNative;nativeCalls.set(id,{resolve,reject});window.webkit.messageHandlers.atomLens.postMessage({action,id});
+ });
+}
+window.atomLensNativeResult=(id,result)=>{const call=nativeCalls.get(id);if(!call)return;nativeCalls.delete(id);result.error?call.reject(Error(result.error)):call.resolve(result);};
+function activeViewer(){return viewers.get(state.session);}
+function notify(method,params,context=activeViewer()){context.frame.contentWindow.postMessage({jsonrpc:'2.0',method,params},location.origin);}
+function showError(error){$('notice').textContent=error.message||String(error);}
+function translated(text){return StructureI18n.translate(text,StructureI18n.language);}
+function dataOption(label,value){const option=new Option(label,value);option.setAttribute('data-no-i18n','');return option;}
+function connectionLabel(){return state.remote&&state.profile?.name!==state.host?`${state.profile?.name||state.host} (${state.host})`:state.host;}
+function syncViewerTools(context){
+ const controls=context.controls;
+ if(!controls)return;
+ controls.host.replaceChildren(...state.connections.map(item=>dataOption(item.remote?item.profile?.name||item.host:translated('本地 Mac'),item.session)));
+ controls.host.value=state.session;controls.host.disabled=state.connections.length<2;controls.host.title=connectionLabel();
+ controls.browse.hidden=!state.remote;
+ controls.codexStatus.textContent=localCodex===true?'已安装':localCodex===false?'未安装':'';
+}
+function updateHost(){
+ for(const context of viewers.values())syncViewerTools(context);
+ $('browser-title').textContent=`浏览文件 · ${state.host}`;renderServers();
+}
+function installViewerTools(context){
+ const document=context.frame.contentDocument;
+ if(!document?.getElementById('desktop-tools'))return;
+ const get=id=>document.getElementById(id);
+ const tools=get('desktop-tools'),host=get('desktop-host'),browse=get('browse'),empty=get('open-empty');
+ context.controls={host,browse,codexStatus:get('codex-status')};
+ get('local-open').onclick=get('open-file').onclick=openLocal;
+ empty.onclick=()=>state.remote?showBrowser():openLocal();
+ browse.onclick=showBrowser;
+ get('servers').onclick=window.atomLensShowServers;
+ get('codex').onclick=()=>native('installCodex').catch(showError);
+ get('workspace-menu').addEventListener('toggle',event=>{if(event.target.open)refreshCodex();});
+ host.onchange=()=>activate(host.value).catch(error=>{updateHost();showError(error);});
+ tools.hidden=false;syncViewerTools(context);
+}
+async function refreshCodex(){
+ try{localCodex=(await api('local-codex')).installed;for(const context of viewers.values())syncViewerTools(context);}
+ catch{/* The viewer and its Codex installer remain accessible offline. */}
+}
+function resetViewer(){
+ const retained=new Set(state.connections.map(item=>item.session));
+ for(const [id,context] of viewers){if(!retained.has(id)){notify('atomlens/visibility',{visible:false},context);context.frame.remove();viewers.delete(id);}}
+ if(!viewers.has(state.session)){
+  const frame=initialViewer.isConnected&&!initialViewer.src?initialViewer:document.createElement('iframe');
+  frame.title='原子结构与轨迹查看器 · '+state.host;
+  const context={frame,session:state.session,ready:false,pendingOpen:null};viewers.set(state.session,context);
+  frame.addEventListener('load',()=>installViewerTools(context));
+  frame.src=new URL('widget?session='+state.session,location.href).href;
+  if(!frame.isConnected)document.body.append(frame);
+ }
+ for(const [id,context] of viewers){const visible=id===state.session;context.frame.hidden=!visible;if(context.ready)notify('atomlens/visibility',{visible},context);}
+ updateHost();
+}
+async function activate(session){state=await api('activate',{session});resetViewer();$('notice').textContent='';}
+async function rpc(method,params={},session=state.session){return api('rpc',{session,method,params});}
+function profile(){return {id:selectedProfileId,name:$('server-name').value.trim(),host:$('ssh-host').value.trim(),config:$('ssh-config').value.trim(),python:$('ssh-python').value.trim(),codex:$('remote-codex').checked};}
+async function openPaths(paths){
+ if(!paths?.length)return;
+ if(paths.length>32)throw Error('一次最多打开 32 个主文件及配套文件');
+ if(paths.length>1){openCandidates=paths;$('primary-path').replaceChildren(...paths.map(path=>dataOption(path,path)));$('primary-dialog').showModal();return;}
+ await openFile(paths[0],[]);
+}
+async function openFile(path,companions){
+ const session=state.session,context=activeViewer();
+ const result=await rpc('tools/call',{name:'open_structure_path',arguments:{path,companions}},session);
+ if(result.isError)throw Error(result.content?.find(item=>item.text)?.text||'打开失败');
+ if(!viewers.has(session))return;
+ if(context.ready)notify('ui/notifications/tool-result',result,context);else context.pendingOpen=result;
+ $('notice').textContent='';
+}
+window.atomLensOpenPaths=async paths=>{
+ try{if(!paths?.length)return;await useLocal();await openPaths(paths);}catch(error){showError(error);}
+};
+window.addEventListener('message',async event=>{
+ const context=[...viewers.values()].find(item=>event.source===item.frame.contentWindow);
+ if(!context||event.origin!==location.origin||event.data?.jsonrpc!=='2.0')return;
+ const message=event.data,session=context.session,source=event.source;
+ if(message.method==='ui/notifications/initialized'){context.ready=true;notify('atomlens/language',{language:StructureI18n.language},context);notify('atomlens/visibility',{visible:session===state.session},context);if(context.pendingOpen){notify('ui/notifications/tool-result',context.pendingOpen,context);context.pendingOpen=null;}return;}
+ if(message.method==='atomlens/language'){
+  const language=message.params?.language;
+  if(session!==state.session||!['en','zh-CN'].includes(language))return;
+  StructureI18n.setLanguage(language);
+  updateHost();
+  for(const viewer of viewers.values())if(viewer.ready)notify('atomlens/language',{language},viewer);
+  window.webkit?.messageHandlers?.atomLens?.postMessage({action:'setLanguage',language});
+  return;
+ }
+ if(message.id===undefined)return;
+ let response;
+ try{
+  let result;
+  if(message.method==='ui/initialize')result={protocolVersion:'2026-01-26',hostInfo:{name:'Atom Lens Desktop',version:'0.13.3'},hostCapabilities:{atomLensConcurrentIndex:state.connections.some(item=>item.session===session&&item.concurrentIndex)},hostContext:{displayMode:'fullscreen',atomLensLanguage:StructureI18n.language}};
+  else {
+   const params=message.params||{},args=params.arguments;
+   if(message.method==='tools/call'&&params.name==='structure_media_export'&&args?.action==='save'&&args.destination==='native'){
+    const folder=await native('chooseDirectory');
+    if(!folder.path)result={content:[],structuredContent:{cancelled:true}};
+    else result=await rpc(message.method,{...params,arguments:{...args,directory:folder.path}},session);
+   }else result=await rpc(message.method,params,session);
+  }
+  response={jsonrpc:'2.0',id:message.id,result};
+ }catch(error){response={jsonrpc:'2.0',id:message.id,error:{code:-32000,message:error.message}};}
+ if(viewers.has(session))source.postMessage(response,location.origin);
+});
+async function useLocal(){await activate(state.connections.find(item=>!item.remote).session);}
+async function openLocal(){
+ try{const result=await native('openFiles');await window.atomLensOpenPaths(result.paths);}catch(error){showError(error);}
+}
+function sameServer(left,right){return Boolean(left&&right&&left.host===right.host&&left.config===right.config);}
+function renderServers(){
+ const placeholder=new Option('选择服务器…','');placeholder.disabled=true;
+ const options=[placeholder];
+ if(savedProfiles.length){
+  const group=document.createElement('optgroup');group.label='已保存';
+  for(const item of savedProfiles){
+   const connected=state?.connections.find(connection=>sameServer(item,connection.profile)&&item.python===connection.profile.python);
+   const label=item.name===item.host?item.name:`${item.name} · ${item.host}`;
+   const suffix=connected?' · '+translated(connected.session===state.session?'当前查看':'已连接'):'';
+   group.append(dataOption(label+suffix,'saved:'+item.id));
+  }options.push(group);
+ }
+ const aliases=sshHosts.filter(host=>!savedProfiles.some(item=>item.host===host&&item.config===$('ssh-config').value));
+ if(aliases.length){const group=document.createElement('optgroup');group.label='SSH 配置中的主机';for(const host of aliases)group.append(dataOption(host,'ssh:'+host));options.push(group);}
+ const listKey=JSON.stringify([savedProfiles,sshHosts,$('ssh-config').value,state?.connections,state?.session,StructureI18n.language]);
+ if(listKey!==serverListKey){$('server-list').replaceChildren(...options);serverListKey=listKey;}
+ $('server-list').value=serverSelection;
+ if(state)$('connection-status').textContent='当前查看：'+connectionLabel();
+ updateServerActions();
+}
+function fillProfile(item){$('server-name').value=item.name||'';$('ssh-host').value=item.host||'';$('ssh-config').value=item.config||'~/.ssh/config';$('ssh-python').value=item.python||'python3';$('remote-codex').checked=Boolean(item.codex);}
+function newProfile(){selectedProfileId=null;serverSelection='';fillProfile({config:$('ssh-config').value});$('server-status').textContent='';renderServers();$('ssh-host').focus();}
+async function readHosts(){
+ const request=++hostRequest,config=$('ssh-config').value;
+ const result=await api('hosts',{config});
+ if(request!==hostRequest||config!==$('ssh-config').value)return;
+ $('ssh-config').value=result.config;sshHosts=result.hosts;renderServers();
+}
+async function loadServers(){
+ const result=await api('profiles');savedProfiles=result.profiles;
+ if(selectedProfileId&&!savedProfiles.some(item=>item.id===selectedProfileId)){selectedProfileId=null;serverSelection='';}
+ renderServers();await readHosts();
+}
+async function saveProfile(){
+ const result=await api('profiles',{action:'save',profile:profile()});
+ savedProfiles=result.profiles;selectedProfileId=result.saved.id;serverSelection='saved:'+selectedProfileId;
+ fillProfile(result.saved);renderServers();return result.saved;
+}
+function selectedConnection(){const chosen=profile();return state?.connections.find(item=>sameServer(chosen,item.profile)&&chosen.python===item.profile.python);}
+const serverControls=['disconnect','check','deploy','connect','server-close','server-save','server-new','server-remove','server-list','server-name','ssh-host','ssh-config','ssh-python','remote-codex','refresh-hosts'];
+function updateServerActions(){
+ for(const id of ['check','deploy','connect','server-save'])$(id).disabled=switching||!profile().host;
+ $('server-remove').disabled=switching||!selectedProfileId;
+ $('disconnect').disabled=switching||!selectedConnection();
+ const chosen=profile();
+ const saved=savedProfiles.find(item=>item.id===selectedProfileId&&sameServer(item,chosen)&&item.python===chosen.python);
+ $('remote-codex-status').textContent=saved?.codexInstalled===true?'已安装':saved?.codexInstalled===false?'未安装':'';
+}
+function setServerBusy(busy){switching=busy;for(const id of serverControls)$(id).disabled=busy;updateServerActions();}
+function serverError(error){$('server-status').textContent=error.message;}
+$('server-list').onchange=()=>{
+ if(switching)return;serverSelection=$('server-list').value;$('server-status').textContent='';
+ if(serverSelection.startsWith('saved:')){selectedProfileId=serverSelection.slice(6);const item=savedProfiles.find(item=>item.id===selectedProfileId);if(!item)return;fillProfile(item);readHosts().catch(serverError);}
+ else if(serverSelection.startsWith('ssh:')){selectedProfileId=null;const host=serverSelection.slice(4);fillProfile({name:host,host,config:$('ssh-config').value});}
+ renderServers();
+};
+$('disconnect').onclick=async()=>{const connection=selectedConnection();if(switching||!connection)return;setServerBusy(true);try{state=await api('disconnect',{session:connection.session});resetViewer();$('server-status').textContent='已断开 '+connection.host+'，配置仍保留。';}catch(error){serverError(error);}finally{setServerBusy(false);}};
+for(const id of ['ssh-host','ssh-config','ssh-python'])$(id).addEventListener('input',updateServerActions);
+$('server-new').onclick=newProfile;
+$('server-save').onclick=async()=>{if(switching)return;setServerBusy(true);try{const saved=await saveProfile();$('server-status').textContent='已保存 '+saved.name+'。';}catch(error){serverError(error);}finally{setServerBusy(false);}};
+$('server-remove').onclick=async()=>{if(switching||!selectedProfileId)return;setServerBusy(true);try{const result=await api('profiles',{action:'remove',id:selectedProfileId});savedProfiles=result.profiles;newProfile();$('server-status').textContent='已从本机列表移除配置。';}catch(error){serverError(error);}finally{setServerBusy(false);}};
+$('refresh-hosts').onclick=()=>readHosts().catch(serverError);
+window.atomLensShowServers=()=>{if(!state||$('server-dialog').open)return;$('server-dialog').showModal();loadServers().catch(serverError);};
+$('server-close').onclick=()=>$('server-dialog').close();
+async function serverAction(action){
+ if(switching)return;
+ if(!profile().host){$('server-status').textContent='请选择或填写服务器';return;}
+ setServerBusy(true);
+ $('server-status').textContent=action==='install'?'正在上传并安装后端…':'正在连接并检查…';
+ try{
+  const chosen=action==='check'?profile():await saveProfile();
+  if(action==='connect'){
+   state=await api('connect',{profile:chosen});resetViewer();$('server-status').textContent='';$('server-dialog').close();
+   $('notice').textContent='';
+  }else{
+   if(action==='install'){for(const item of state.connections){if(sameServer(chosen,item.profile))state=await api('disconnect',{session:item.session,updating:true});}resetViewer();}
+   const result=await api('bootstrap',{profile:chosen,install:action==='install',codex:chosen.codex});
+   savedProfiles=(await api('profiles')).profiles;renderServers();
+   const version=result.version ? result.version+(result.trajectoryUpdateAvailable?' · 轨迹读取可更新':'') : '未安装';
+   const installed=result.codexInstalled===true?'插件已安装':result.codexInstalled===false?'未安装':result.codex?'安装状态未知':'未检测到';
+   $('server-status').textContent=`${result.system} ${result.architecture} · Python ${result.pythonVersion}\n后端：${version}\nCodex：${installed}`;
+  }
+ }catch(error){$('server-status').textContent=error.message;}
+ finally{setServerBusy(false);}
+}
+$('server-dialog').addEventListener('cancel',event=>{if(switching)event.preventDefault();});
+$('check').onclick=()=>serverAction('check');$('deploy').onclick=()=>serverAction('install');$('connect').onclick=()=>serverAction('connect');
+function fileIcon(name){
+ const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+ const use=document.createElementNS(svg.namespaceURI,'use');
+ svg.setAttribute('class','file-browser-icon');svg.setAttribute('aria-hidden','true');
+ use.setAttribute('href','#browser-i-'+name);svg.append(use);return svg;
+}
+function updateFileActions(){
+ $('browser-open').disabled=!selected.size;
+ $('browser-open').textContent=selected.size?`打开所选文件 (${selected.size})`:'打开所选文件';
+}
+function fileRow(entry){
+ const item=document.createElement('li'),row=document.createElement('div');
+ const name=document.createElement('span');name.className='file-browser-name';name.textContent=entry.name;name.title=entry.path;name.setAttribute('data-no-i18n','');
+ row.className='file-browser-row';item.append(row);
+ if(entry.directory){
+  const toggle=document.createElement('button'),button=document.createElement('button'),children=document.createElement('div');
+  toggle.className='file-folder-toggle';toggle.setAttribute('aria-expanded','false');
+  toggle.setAttribute('aria-label','展开 '+entry.name);toggle.append(fileIcon('chevron'));
+  button.className='file-browser-entry';button.append(fileIcon('folder'),name);button.onclick=()=>listDirectory(entry.path);
+  children.className='file-tree-children';children.hidden=true;row.append(toggle,button);item.append(children);
+  toggle.onclick=()=>{
+   children.hidden=!children.hidden;
+   toggle.setAttribute('aria-expanded',String(!children.hidden));
+   toggle.setAttribute('aria-label',(children.hidden?'展开 ':'收起 ')+entry.name);
+   button.firstChild.replaceWith(fileIcon(children.hidden?'folder':'folder-open'));
+   if(!children.hidden&&!children.hasChildNodes())readDirectory(children,entry.path);
+  };
+ }else{
+  const indent=document.createElement('span'),label=document.createElement('label'),box=document.createElement('input');
+  indent.className='file-tree-indent';label.className='file-browser-entry';box.type='checkbox';box.checked=selected.has(entry.path);
+  label.append(fileIcon('document'),box,name);row.append(indent,label);
+  box.onchange=()=>{box.checked?selected.add(entry.path):selected.delete(entry.path);updateFileActions();};
+ }
+ return item;
+}
+async function readDirectory(target,path,offset=0){
+ const generation=directoryGeneration, root=target===$('files');
+ const current=()=>generation===directoryGeneration&&target.isConnected;
+ const status=root?$('browser-status'):document.createElement('p');
+ const more=target.querySelector(':scope > .file-tree-more');
+ if(more)more.disabled=true;
+ if(!root){status.className='status';status.setAttribute('role','status');target.append(status);}
+ status.textContent='正在读取目录…';
+ try{
+  const page=await rpc('atomlens/list-directory',{path,offset});if(!current())return;
+  if(root){directoryPage=page;if(!offset)$('directory').value=page.path;$('up').disabled=page.parent===page.path;$('browser-folder').disabled=false;}
+  more?.remove();
+  let list=target.querySelector(':scope > ul');
+  if(!list){list=document.createElement('ul');target.append(list);}
+  list.append(...page.entries.map(fileRow));
+  status.textContent=!offset&&!page.entries.length?'目录为空':page.truncated&&page.next===null?'目录超过浏览上限':'';
+  if(!root&&!status.textContent)status.remove();
+  if(page.next!==null){const button=document.createElement('button');button.className='file-tree-more';button.textContent='加载更多文件';button.onclick=()=>readDirectory(target,page.path,page.next);target.append(button);}
+ }catch(error){
+  if(!current())return;
+  status.textContent=error.message;
+  if(more)more.disabled=false;
+  else if(!root){const retry=document.createElement('button');retry.className='file-tree-more';retry.textContent='重试';retry.onclick=()=>{status.remove();retry.remove();readDirectory(target,path,offset);};target.append(retry);}
+ }
+}
+function listDirectory(path){
+ directoryGeneration++;directoryPage=null;$('files').replaceChildren();$('browser-folder').disabled=true;$('up').disabled=true;
+ return readDirectory($('files'),path);
+}
+function showBrowser(){
+ if(!state?.remote||$('browser-dialog').open)return;
+ selected.clear();updateFileActions();$('browser-dialog').showModal();listDirectory('~');
+}
+$('browser-dialog').addEventListener('close',()=>{directoryGeneration++;});
+$('go').onclick=()=>listDirectory($('directory').value);$('directory').onkeydown=event=>{if(event.key==='Enter')$('go').click();};
+$('up').onclick=()=>{if(directoryPage)listDirectory(directoryPage.parent);};
+$('browser-close').onclick=()=>$('browser-dialog').close();
+$('browser-open').onclick=async()=>{try{if(!selected.size)return;$('browser-dialog').close();await openPaths([...selected]);}catch(error){showError(error);}};
+$('browser-folder').onclick=async()=>{const button=$('browser-folder');button.disabled=true;try{await openFile($('directory').value.trim(),[]);$('browser-dialog').close();}catch(error){$('browser-status').textContent=error.message;}finally{button.disabled=false;}};
+$('primary-close').onclick=()=>$('primary-dialog').close();
+$('primary-open').onclick=async()=>{try{const primary=$('primary-path').value;await openFile(primary,openCandidates.filter(path=>path!==primary));$('primary-dialog').close();}catch(error){showError(error);}};
+const nativeLanguage=window.webkit?.messageHandlers?.atomLens
+ ? native('readLanguage').then(result=>StructureI18n.setLanguage(result.language)).catch(()=>{}) : Promise.resolve();
+function reportAppearance({mode,dark}){window.webkit?.messageHandlers?.atomLens?.postMessage({action:'setAppearance',mode,dark});}
+document.addEventListener('atomlens-theme-change',event=>reportAppearance(event.detail));
+if(typeof chemistryTheme!=='undefined')reportAppearance({mode:chemistryTheme.read().mode,dark:document.documentElement.dataset.theme==='dark'});
+Promise.all([api('startup'),nativeLanguage]).then(([{startupError,...result}])=>{
+ state=result;resetViewer();refreshCodex();
+ $('notice').textContent=startupError?`无法重连上次的服务器：${startupError}`:'';
+ window.webkit?.messageHandlers?.atomLens?.postMessage({action:'ready'});
+}).catch(showError);
+</script></body></html>

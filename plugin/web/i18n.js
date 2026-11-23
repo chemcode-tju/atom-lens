@@ -42,7 +42,7 @@
   function element(node){
     if(node.matches(excluded))return;
     let states=attributeStates.get(node);if(!states){states={};attributeStates.set(node,states);}
-    for(const attr of ['title','aria-label','placeholder']){
+    for(const attr of ['title','aria-label','placeholder','alt','label']){
       if(!node.hasAttribute(attr))continue;
       const current=node.getAttribute(attr);let state=states[attr];
       if(!state||current!==state.last)state={source:current,last:current};
@@ -59,10 +59,16 @@
     api.language=language==='en'?'en':'zh-CN';document.documentElement.lang=api.language;
     try{localStorage.setItem('structure-viewer.language',api.language);localStorage.setItem('chemistry.language',api.language);}catch{}
     visit(document.body);
-    const selector=document.getElementById('language');selector.value=api.language;
-    selector.options[0].textContent=api.language==='en'?'Chinese (Simplified)':'简体中文';
+    const selector=document.getElementById('language');
+    if(selector){
+      selector.value=api.language;
+      selector.options[0].textContent=api.language==='en'?'Chinese (Simplified)':'简体中文';
+    }
   };
-  document.getElementById('language').onchange=event=>api.setLanguage(event.target.value);
+  document.getElementById('language')?.addEventListener('change',event=>{
+    api.setLanguage(event.target.value);
+    document.dispatchEvent(new CustomEvent('atomlens-language-change',{detail:api.language}));
+  });
   api.setLanguage(api.language);
   // Observe only text and accessible labels. Rendering canvases and their large
   // WebGL buffers never pass through this observer. Values (including paths)
@@ -73,5 +79,5 @@
       else if(record.type==='attributes')element(record.target);
       else for(const node of record.addedNodes)visit(node);
     }
-  }).observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['title','aria-label','placeholder']});
+  }).observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['title','aria-label','placeholder','alt','label']});
 })(globalThis);

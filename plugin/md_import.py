@@ -5,17 +5,26 @@ import base64
 import json
 import os
 import stat
+import struct
 import subprocess
 import sys
 from pathlib import Path
+from itertools import islice
 from typing import Any, BinaryIO
 
 from trajectory import file_version
 from file_snapshot import IncompleteFrame, is_snapshot, open_snapshot
+from xtc_index import read_xtc_index
 
 
-def read_md_index(stream: BinaryIO, fmt: str, offset: int, index_only: bool, frozen: bool = False) -> dict[str, Any]:
+def read_md_index(stream: BinaryIO, fmt: str, offset: int, index_only: bool, frozen: bool = False, frame_limit: int = 64) -> dict[str, Any]:
     """Walk frame boundaries on the data host. Only requested frames cross MCP."""
+    if fmt == "xtc":
+        return read_xtc_index(stream, offset, index_only, frozen, frame_limit)
+    if fmt == "trr":
+        return read_trr_index(stream, offset, frozen, frame_limit)
+    if type(frame_limit) is not int or not 1 <= frame_limit <= 4096:
+        raise ValueError("无效轨迹索引批次大小")
     stream.seek(offset)
     offsets: list[int] = []
     stream.seek(0, 2)
@@ -64,10 +73,14 @@ def read_md_index(stream: BinaryIO, fmt: str, offset: int, index_only: bool, fro
                 item(b"ITEM: ATOMS ")
             else:
                 raise ValueError("Unsupported MD format")
-            if not 1 <= count <= 100000:
-                raise ValueError("每帧原子数必须为 1–100000")
-            for _ in range(count + (fmt == "gromacs")):
-                required()
+            if not 1 <= count <= 1000000:
+                raise ValueError("每帧原子数必须为 1–1000000")
+            # BufferedReader's iterator skips coordinate lines in C. Reading
+            # the last declared row still detects a truncated snapshot tail.
+            rows = count + (fmt == "gromacs")
+            last = next(islice(stream, rows - 1, rows), b"")
+            if not last or (frozen and not last.endswith(b"\n")):
+                raise IncompleteFrame("轨迹末尾存在不完整帧")
         except IncompleteFrame:
             if not frozen:
                 raise
@@ -79,9 +92,51 @@ def read_md_index(stream: BinaryIO, fmt: str, offset: int, index_only: bool, fro
             stream.seek(start)
             text = stream.read(finish - start).decode("utf-8")
             break
-        if len(offsets) >= 4096 or stream.tell() - offset >= 8 * 1048576:
+        if len(offsets) >= frame_limit or stream.tell() - offset >= (2 if frame_limit <= 16 else 32) * 1048576:
             break
     return dict(offsets=offsets, nextOffset=stream.tell(), eof=stream.tell() == end, text=text)
+
+
+def read_trr_index(stream: BinaryIO, offset: int, frozen: bool, frame_limit: int) -> dict[str, Any]:
+    """Send only XDR header metadata and skip coordinate, velocity and force payloads."""
+    if type(frame_limit) is not int or not 1 <= frame_limit <= 64:
+        raise ValueError("无效 TRR 索引批次大小")
+    end = stream.seek(0, 2)
+    frames = []
+    for _ in range(frame_limit):
+        if offset == end:
+            break
+        stream.seek(offset)
+        header = stream.read(84)
+        if len(header) < 84:
+            if not frozen:
+                raise IncompleteFrame("TRR 帧头不完整")
+            offset = end
+            break
+        if struct.unpack_from(">3i", header) != (1993, 13, 12) or header[12:24] != b"GMX_trn_file":
+            raise ValueError(f"无效 TRR 帧头（字节 {offset}）")
+        sizes = struct.unpack_from(">10i", header, 24)
+        count, step = struct.unpack_from(">2i", header, 64)
+        ir, energy, box, virial, pressure, top, sym, coords, velocity, force = sizes
+        if not 1 <= count <= 1_000_000:
+            raise ValueError("TRR 原子数无效或超过 1,000,000")
+        width = box / 9 if box else (coords or velocity or force) / (count * 3)
+        if (width not in (4, 8) or min(sizes) < 0 or any((ir, energy, top, sym))
+                or any(size and size != 9 * width for size in (box, virial, pressure))
+                or any(size and size != count * 3 * width for size in (coords, velocity, force))):
+            raise ValueError("不支持的 TRR 数据块布局")
+        width = int(width)
+        start = offset + 76 + 2 * width
+        offset = start + sum(sizes)
+        if offset > end:
+            if not frozen:
+                raise IncompleteFrame("TRR 坐标帧不完整")
+            offset = end
+            break
+        if coords:
+            frames.append(dict(step=step, width=width, start=start, box=box,
+                               coords=start + box + virial + pressure, n=count))
+    return dict(frames=frames, nextOffset=offset, eof=offset == end)
 
 
 def convert_static(args: dict[str, Any]) -> dict[str, str]:
@@ -120,12 +175,13 @@ def import_selected(params: dict[str, Any]) -> dict[str, Any]:
     if action == "stat" or is_snapshot(args.get("version")):
         with open_snapshot(Path(path), None if action == "stat" else args["version"]) as (stream, snapshot):
             if action == "stat":
-                return {"size": snapshot.size, "version": snapshot.version, "supported": True, "frozen": True}
+                return {"size": snapshot.size, "version": snapshot.version, "supported": True,
+                        "frozen": True, "trrIndex": True}
             offset = args.get("offset", 0)
             if type(offset) is not int or not 0 <= offset <= snapshot.size:
                 raise ValueError("无效文件偏移。")
             if action == "frames":
-                return read_md_index(stream, args["format"], offset, args.get("indexOnly", False), frozen=True)
+                return read_md_index(stream, args["format"], offset, args.get("indexOnly", False), frozen=True, frame_limit=args.get("frameLimit", 64))
             if action == "range":
                 length = args["length"]
                 if type(length) is not int or not 0 <= length <= 1048576:
@@ -150,7 +206,7 @@ def import_selected(params: dict[str, Any]) -> dict[str, Any]:
         if type(offset) is not int or not 0 <= offset <= info.st_size:
             raise ValueError("无效文件偏移。")
         if action == "frames":
-            result = read_md_index(stream, args["format"], offset, args.get("indexOnly", False))
+            result = read_md_index(stream, args["format"], offset, args.get("indexOnly", False), frame_limit=args.get("frameLimit", 64))
         elif action == "convert":
             if info.st_size > 32 * 1048576:
                 raise ValueError("Static structure conversion is limited to 32 MiB")

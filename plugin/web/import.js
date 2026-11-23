@@ -13,6 +13,7 @@
   }
   async function classify(file) {
     if (/\.trr$/i.test(file.name)) return "trr";
+    if (/\.xtc$/i.test(file.name)) return "xtc";
     if (/\.(top|itp|tpr|cell)$/i.test(file.name)) return "companion";
     const prefix=await file.slice(0,8192).text();
     if (/^ITEM: (?:TIMESTEP|UNITS|TIME)/m.test(prefix)) return 'lammps-dump-text';
@@ -40,12 +41,13 @@
       }
     }
     const dumps=entries.filter(entry=>entry.format==='lammps-dump-text');
-    const candidates=entries.filter(entry=>entry.format!=='companion' && !(dumps.length && entry.format==='lammps-data'));
+    const xtcs=entries.filter(entry=>entry.format==='xtc');
+    const candidates=entries.filter(entry=>entry.format!=='companion' && !(dumps.length && entry.format==='lammps-data') && !(xtcs.length && entry.format==='gromacs'));
     if(candidates.length!==1)throw Error('请每次选择一条轨迹（或一个结构），可同时选择它的 LAMMPS data、输入文件和日志；不自动拼接多条轨迹。');
     const primary=candidates[0],file=primary.file;
     const selectedFormat=files.length===1 && format!=='auto'?format:primary.format;
     const other=files.filter(item=>item!==file);
-    if (primary.format==='trr' || (other.length && !selectedFormat.startsWith('lammps'))) {
+    if (['trr','xtc'].includes(primary.format) || (other.length && !selectedFormat.startsWith('lammps'))) {
       const paired=await StructurePaired.open(primary,other);
       if(paired)return {name:file.name,...paired};
     }

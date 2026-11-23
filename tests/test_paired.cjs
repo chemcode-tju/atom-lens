@@ -27,7 +27,7 @@ function trrFrame(step,width,{coords=true,n=1}={}){
   await assert.rejects(open([xyz,cell(row(29,2))]),/No CELL row.*28/);
   await assert.rejects(open([xyz,cell(row(28,2)+row(28,3))]),/Duplicate/);
 
-  global.StructureHostFiles={call:async()=>({atoms:[{number:6,mass:12}],pbc:[true,true,false]})};
+  global.StructureHostFiles={call:async()=>({atoms:[{number:6,mass:13,type:'0',typeName:'CT',name:'C1',residue:'MOL',resid:2,charge:.25}],pbc:[true,true,false]})};
   const tpr=new File(['metadata tested independently with gmx dump'],'top.tpr');
   const trr=(...parts)=>new File(parts,'sim.trr');
   const b=await open([tpr,trr(trrFrame(5,4),trrFrame(6,8,{coords:false}),trrFrame(7,8))]);
@@ -35,6 +35,8 @@ function trrFrame(step,width,{coords=true,n=1}={}){
   assert.equal(b.store.count,2);
   const frame=(await b.store.get(1)).frame;
   assert.equal(frame.atoms[0].elem,'C');assert.equal(frame.atoms[0].x,70);
+  assert.equal(frame.atoms[0].type,'0');assert.equal(frame.atoms[0].typeName,'CT');assert.equal(frame.atoms[0].mass,13);
+  assert.equal(frame.atoms[0].residue,'MOL');assert.equal(frame.atoms[0].charge,.25);
   assert.deepEqual(frame.cell,[[20,0,0],[1,30,0],[0,0,40]]);
   assert.deepEqual(frame.pbc,[true,true,false]);
   await assert.rejects(open([tpr,trr(trrFrame(1,4,{n:2}))]),/atom count mismatch/);

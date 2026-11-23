@@ -30,13 +30,14 @@ def data_frame(text: str, elements: list[str], units: str, atom_style: str) -> A
         if match:
             origin[index] = float(match[1])
     atoms.positions -= origin
+    atoms.info["cell_origin"] = origin.tolist()
     return atoms
 
 
 def frame_text(atoms: Atoms) -> str:
     """Serialize only viewer fields; coordinates/cell in Å and masses in atomic mass units."""
-    if not 1 <= len(atoms) <= 100000:
-        raise ValueError("每帧原子数必须为 1–100000")
+    if not 1 <= len(atoms) <= 1000000:
+        raise ValueError("每帧原子数必须为 1–1000000")
     masses = atoms.get_masses()
     if not all(np.isfinite(values).all() for values in (atoms.positions, atoms.cell, masses)):
         raise ValueError("结构包含非有限坐标、晶胞或质量。")
@@ -47,14 +48,20 @@ def frame_text(atoms: Atoms) -> str:
     lattice = " ".join(f"{value:.12g}" for value in np.asarray(atoms.cell).ravel())
     periodic = " ".join("T" if value else "F" for value in atoms.pbc)
     identifiers = atoms.arrays.get("id")
+    extras = [(name, atoms.arrays[source]) for name, source in
+              (("atom_type", "type"), ("atom_name", "atomtypes"), ("residue", "residuenames"), ("residue_id", "residuenumbers"), ("charge", "initial_charges"))
+              if source in atoms.arrays and atoms.arrays[source].ndim == 1]
     properties = "species:S:1:pos:R:3:mass:R:1" + (":id:I:1" if identifiers is not None else "")
-    lines = [str(len(atoms)), f'Lattice="{lattice}" Properties={properties} pbc="{periodic}"']
+    properties += "".join(f":{name}:S:1" for name, _ in extras)
+    origin = " ".join(str(value) for value in atoms.info.get("cell_origin", [0, 0, 0]))
+    lines = [str(len(atoms)), f'Lattice="{lattice}" Properties={properties} pbc="{periodic}" cell_origin="{origin}"']
     for index, (symbol, position, mass) in enumerate(
         zip(atoms.get_chemical_symbols(), atoms.positions, masses, )
     ):
         coordinates = " ".join(f"{value:.12g}" for value in position)
         identifier = f" {int(identifiers[index])}" if identifiers is not None else ""
-        lines.append(f"{symbol} {coordinates} {mass:.12g}{identifier}")
+        extra = "".join(f" {json.dumps(str(values[index]))}" for _, values in extras)
+        lines.append(f"{symbol} {coordinates} {mass:.12g}{identifier}{extra}")
     return "\n".join(lines) + "\n"
 
 

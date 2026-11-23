@@ -12,8 +12,8 @@ assert.equal(translate('/data/结构/POSCAR'),'/data/结构/POSCAR');
 assert.equal(translate('已保存：/data/结构/快照.png'),'Saved: /data/结构/快照.png');
 // Every static UI text/tooltip must have an English translation. Do not test
 // user data (filenames, chemical symbols or source) as translatable strings.
-const html=fs.readFileSync('plugin/web/index.html','utf8');
-for(const match of html.matchAll(/>([^<>]*[\p{Script=Han}][^<>]*)<|(?:title|aria-label|placeholder)="([^"]*[\p{Script=Han}][^"]*)"/gu)){
+const html=['plugin/web/index.html','native/desktop.html'].map(path=>fs.readFileSync(path,'utf8').split('<script src="i18n.js">')[0]).join('\n');
+for(const match of html.matchAll(/>([^<>]*[\p{Script=Han}][^<>]*)<|(?:title|aria-label|placeholder|alt|label)="([^"]*[\p{Script=Han}][^"]*)"/gu)){
  const text=(match[1]||match[2]).trim();if(text==='简体中文')continue;
  assert.ok(!/[\p{Script=Han}]/u.test(translate(text)),`Missing UI translation: ${text}`);
 }

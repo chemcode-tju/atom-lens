@@ -4,14 +4,24 @@ application_name = "Structure Snapshot Saver.app"
 
 from pathlib import Path
 import os
+import platform
 import plistlib
 import shutil
 import tempfile
 import subprocess
+import sys
 
 
 def main() -> None:
+    if platform.system() != "Darwin":
+        raise SystemExit("保存助手只安装在 Mac 上；服务器只需运行 python3 install.py。")
     root = Path(__file__).resolve().parent
+    prebuilt = root / "SnapshotSaver"
+    if not prebuilt.is_file():
+        compiler = subprocess.run(["/usr/bin/xcrun", "--find", "clang"], capture_output=True, check=False)
+        if compiler.returncode:
+            raise SystemExit("源码安装保存助手需要 Apple Command Line Tools。请先运行 xcode-select --install，\n"
+                             "或使用内置保存助手的 Mac 图形安装包。")
     app = Path.home() / "Applications" / application_name
     label = "org.structure-viewer.snapshot-saver"
     domain = f"gui/{os.getuid()}"
@@ -28,9 +38,13 @@ def main() -> None:
             shutil.copy2(root / filename, resources)
         for filename in ("snapshot_queue.py", "local_export.py"):
             shutil.copy2(root.parent / "plugin" / filename, resources)
-        subprocess.run(["/usr/bin/xcrun", "clang", "-fobjc-arc", "-fblocks", str(root / "SnapshotSaver.m"), "-o", str(executable), "-framework", "Cocoa", "-framework", "UniformTypeIdentifiers"], check=True)
+        (resources / "python-executable.txt").write_text(sys.executable, encoding="utf-8")
+        if prebuilt.is_file():
+            shutil.copy2(prebuilt, executable)
+        else:
+            subprocess.run(["/usr/bin/xcrun", "clang", "-fobjc-arc", "-fblocks", str(root / "SnapshotSaver.m"), "-o", str(executable), "-framework", "Cocoa", "-framework", "UniformTypeIdentifiers"], check=True)
         info = {"CFBundleName": "Structure Snapshot Saver", "CFBundleIdentifier": label,
-                "CFBundleExecutable": executable.name, "CFBundlePackageType": "APPL", "CFBundleVersion": "6", "LSUIElement": True}
+                "CFBundleExecutable": executable.name, "CFBundlePackageType": "APPL", "CFBundleVersion": "7", "LSUIElement": True}
         (contents / "Info.plist").write_bytes(plistlib.dumps(info))
         subprocess.run(["/usr/bin/codesign", "--force", "--sign", "-", str(staged)], check=True)
         agent.parent.mkdir(parents=True, exist_ok=True)

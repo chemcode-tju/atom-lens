@@ -9,6 +9,10 @@ let drift = null, paintTicket = 0, selectionTicket = 0, snapshotTicket = 0, snap
 let snapshotHost = null, activeRecord = null, snapshotSaving = false;
 let navigationTarget = null, navigationTask = null;
 let playbackGeneration = 0;
+let timelineSeek=null,viewVisible=true,resumeWhenVisible=false,tickLayout='';
+let concurrentIndex=false;
+let desktopLanguage=false;
+let inspector;
 let playback = {fps:60, speed:1, step:1, loop:true};
 function afterPaint(callback) { requestAnimationFrame(() => setTimeout(callback, 0)); }
 function scheduleRender(reset = false) { const ticket=++paintTicket; afterPaint(() => { if(ticket===paintTicket)render(reset); }); }
@@ -45,25 +49,30 @@ function displayPlayback(playing) {
   button.setAttribute("aria-label", label);
   button.title = label;
 }
-function stop() { ++playbackGeneration; cancelAnimationFrame(timer); timer = null; displayPlayback(false); }
+function stop() { ++playbackGeneration; cancelAnimationFrame(timer); timer = null; timelineSeek=null;resumeWhenVisible=false;doc?.setPlayback?.(frameIndex,false);displayPlayback(false); }
 function updateTimeline() {
   if (!doc) return;
-  $("timeline").max = doc.count - 1; $("timeline").value = frameIndex; $("timeline").disabled = doc.count < 2;
-  $("frame-number").max = doc.count; $("frame-number").value = frameIndex + 1;
+  $("timeline").max = doc.count - 1; if(!timelineSeek)$("timeline").value = frameIndex; $("timeline").disabled = doc.count < 2;
+  $("frame-number").max = doc.count;
+  if(document.activeElement!==$("frame-number"))$("frame-number").value = frameIndex + 1;
   const total = String(doc.count) + (streamComplete ? "" : "+");
   $("frame-total").textContent = total;
-  $("frame-summary").textContent = `${frameIndex + 1} / ${total}`;
   const single = streamComplete && doc.count === 1;
+  const changed=$("trajectory-tools").classList.contains("single-frame")!==single;
   $("trajectory-tools").classList.toggle("single-frame", single);
+  if(changed)views?.resizeToLayout();
   $("frame-number").readOnly = single;
   $("first").disabled = $("previous").disabled = frameIndex === 0;
   $("next").disabled = $("last").disabled = frameIndex === doc.count - 1;
-  $("play").disabled = doc.count < 2;
+  $("play").disabled = !doc.count || single;
   $("frame-number").closest(".frame-label").style.setProperty("--frame-digits", Math.max(2, total.length) + "ch");
-  if (!$("trajectory-tools").open || single) return;
+  if (single) return;
   const width=$("ticks").clientWidth;
+  if(!width)return;
+  const font=getComputedStyle($("ticks")).font,key=JSON.stringify([doc.count,width,font]);
+  if(tickLayout===key)return;tickLayout=key;
   const canvas=document.createElement('canvas'),context=canvas.getContext('2d');
-  context.font=getComputedStyle($("ticks")).font;
+  context.font=font;
   const marks=StructureControls.timelineTicks(doc.count,width,text=>context.measureText(text).width);
   $("ticks").replaceChildren(...marks.map(({value,x,tickX})=>{
     const span=document.createElement('span');span.textContent=value;span.style.left=x+'px';span.style.setProperty('--tick-offset',(tickX-x)+'px');return span;
@@ -81,12 +90,12 @@ function render(reset = false, strict = false) {
     if (!$("source-panel").hidden) $("source").value = activeRecord.text;
     $("source-title").textContent = doc.vaspPreview ? `第 ${frameIndex + 1} 帧 VASP 源码` : doc.xyz ? `第 ${frameIndex + 1} 帧源码` : "VASP 文件源码";
     updateSelection();
+    inspector?.update(frameData,frameIndex,selection);
   } catch (error) { stop(); status(error.message, true); if(strict)throw error; }
 }
 function updateSelection() {
   const count = selection.length;
-  $("atom-panel").hidden = $("selected-summary").hidden = count === 0;
-  $("selected-summary").textContent = count ? `已选 ${count}` : "";
+  $("atom-panel").hidden = count === 0;
   $("atom-title").textContent=selection.length?`已选 ${selection.length}`:'';
   if(!frameData)return;
   const atoms=displayedFrame().atoms;
@@ -105,9 +114,9 @@ function updateSelection() {
   }
 }
 function selectionChanged() {
-  if (selection.length && $("atom-panel").hidden) $("trajectory-tools").open = true;
   stop();
   updateSelection();
+  inspector?.update(frameData,frameIndex,selection,true);
   const ticket=++selectionTicket;
   afterPaint(()=>{if(ticket===selectionTicket)views?.updateSelection(selection);});
 }
@@ -121,7 +130,7 @@ function chooseBox(indices, toggle) {
 }
 function resetDisplayState() {
   displayState = new StructureSelection.DisplayState(); selection = [];
-  $("atom-panel").hidden = $("selected-summary").hidden = true;
+  $("atom-panel").hidden = true;
 }
 function populateElements() {
   if(!frameData)return;
@@ -133,16 +142,16 @@ function populateElements() {
   updateSelection();
 }
 $("clear-selection").onclick=()=>{selection=[];selectionChanged();};
-$("display-settings").onclick=()=>{stop();openPanel($("display-dialog"));populateElements();};
+$("display-settings").onclick=()=>{openPanel($("display-dialog"));populateElements();};
 $("display-close").onclick=()=>$("display-dialog").close();
-$("show-elements").onclick=()=>{displayState.hiddenElements.clear();populateElements();scheduleRender();};
+$("show-elements").onclick=()=>{displayState.showAll();populateElements();scheduleRender();};
 const selectionControls = [
   ["style", $("selection-style")], ["palette", $("selection-palette")], ["visible", $("selection-visible")]
 ];
 for (const [field, control] of selectionControls) {
   control.disabled = true;
   control.onchange = () => {
-    if (!frameData || !selection.length) return;
+    if (!frameData || !selection.length || control.value === 'mixed') return;
     const value = control.value === "" ? null : field === "visible" ? control.value === "show" : control.value;
     displayState.apply(frameData, selection, {[field]: value});
     scheduleRender();
@@ -179,17 +188,19 @@ function discardDocument() {
   doc?.dispose(); doc=null; activeRecord=null; navigationTarget=null; navigationTask=null;
   document.body.classList.remove("has-structure");
   $("drift-settings").disabled = true;
+  inspector?.clear();
 }
 async function showDocument(store,generation) {
   if(generation!==readGeneration){store.dispose();return;}
-  doc=store;const record=await store.get(0);
+  doc=store;store.setActive?.(viewVisible);store.concurrentIndex=concurrentIndex&&!pickedFile;
+  const record=await store.get(0);
   if(generation!==readGeneration)return;
   activeRecord=record;
   document.body.classList.add("has-structure");$("drift-settings").disabled=false;
   frameIndex=0;streamComplete=store.complete;render(true,true);status('');loading=false;
   // Render the first frame before starting any background index batch.
   afterPaint(()=>store.scan(()=>{if(doc===store){streamComplete=store.complete;updateTimeline();}})
-    .catch(error=>{if(doc===store)status(`加载停止：${error.message}（保留已加载的 ${store.count} 帧）`,true);}));
+    .catch(error=>{if(doc===store){stop();streamComplete=true;updateTimeline();status(`加载停止：${error.message}（保留已加载的 ${store.count} 帧）`,true);}}));
 }
 async function loadFile(file, reload = false) {
   if (!file?.resourceUri || (!reload && (fileRef?.resourceUri === file.resourceUri || fileRef?.linkUri === file.resourceUri) && (doc || loading))) return;
@@ -204,12 +215,12 @@ async function loadFile(file, reload = false) {
     if (linkedTrajectory) {
       const reply = await request('tools/call', {name:'resolve_lammps_link', arguments:file.token?{token:file.token}:{}});
       if (generation!==readGeneration) return;
-      if (!reply.structuredContent?.file) throw Error(reply.content?.[0]?.text || '无效的 Structure Viewer 轨迹链接。');
+      if (!reply.structuredContent?.file) throw Error(reply.content?.[0]?.text || '无效的 Atom Lens 轨迹链接。');
       file = {...reply.structuredContent.file, linkUri:file.resourceUri};
       fileRef = file;
       $("filename").textContent = file.name;
     }
-    if(!/^(POSCAR|CONTCAR|XDATCAR)$|\.(xyz|extxyz|traj|vasp)$/i.test(file.name) || file.companions?.length) {
+    if($("import-format").value!=="auto" || !/^(POSCAR|CONTCAR|XDATCAR)$|\.(xyz|extxyz|traj|vasp)$/i.test(file.name) || file.companions?.length) {
       const files=await Promise.all([file,...(file.companions||[])].map(StructureHostFiles.open));
       if(generation!==readGeneration)return;
       if(!files[0] && files.length===1) {
@@ -220,7 +231,7 @@ async function loadFile(file, reload = false) {
       }
       const imported=await StructureImport.open(files,{format:linkedTrajectory ? "lammps-dump-text" : $("import-format").value});
       await showDocument(imported.store,generation);
-      if(generation===readGeneration)showImportNote(imported.note);
+      if(generation===readGeneration)showImportNote([file.discoveryNote,imported.note].filter(Boolean).join(' · '));
       return;
     }
     const call=async args=>{
@@ -232,6 +243,7 @@ async function loadFile(file, reload = false) {
     if(generation!==readGeneration)return;
     if(batch?.supported===false)return loadFullFile(file);
     await showDocument(StructureTrajectory.host(file.name,call,batch),generation);
+    if(generation===readGeneration && file.discoveryNote)showImportNote(file.discoveryNote);
     if(!file.token)request('resources/subscribe',{uri:file.resourceUri}).catch(()=>{});
   }catch(error){if(generation===readGeneration)status(`加载停止：${error.message}`,true);}
   finally{if(generation===readGeneration)loading=false;}
@@ -259,6 +271,14 @@ async function loadFullFile(file) {
 window.addEventListener("message", event => {
   if (event.source !== window.parent || event.data?.jsonrpc !== "2.0") return;
   const message = event.data;
+  if(message.method==='atomlens/language'&&desktopLanguage){StructureI18n.setLanguage(message.params?.language);return;}
+  if(message.method==='atomlens/visibility'){
+    if(viewVisible===Boolean(message.params?.visible))return;
+    viewVisible=Boolean(message.params?.visible);doc?.setActive?.(viewVisible);
+    if(!viewVisible){const playing=timer!==null||timelineSeek?.playing;stop();resumeWhenVisible=playing;}
+    else if(resumeWhenVisible){resumeWhenVisible=false;startPlayback(false);}
+    return;
+  }
   if (pending.has(message.id)) {
     const p = pending.get(message.id); pending.delete(message.id); clearTimeout(p.timeout);
     message.error ? p.reject(Error(message.error.message || "宿主请求失败")) : p.resolve(message.result); return;
@@ -267,7 +287,7 @@ window.addEventListener("message", event => {
   if (message.method === "ui/notifications/tool-result") {
     const result=message.params?.structuredContent;
     if(result?.host){hostName=result.host;$("path-host").textContent=`${hostName} 上的完整路径`;}
-    if(result?.file)loadFile(result.file);
+    if(result?.file || result?.choices)openSelectionResult(result);
     else if(result?.browser&&!doc)$("path-dialog").showModal();
   }
   if (message.method === "notifications/resources/updated" && message.params?.uri === fileRef?.resourceUri) {
@@ -278,19 +298,38 @@ window.addEventListener("message", event => {
     stop(); discardDocument(); window.parent.postMessage({ jsonrpc: "2.0", id: message.id, result: {} }, "*");
   }
 });
-$("timeline").addEventListener("input", e => { stop(); go(e.target.value); });
+function beginTimelineSeek() {
+  if(timelineSeek)return;
+  const playing=timer!==null;stop();
+  timelineSeek={playing,document:doc,generation:readGeneration};doc?.setPlayback?.(frameIndex,true);displayPlayback(playing);
+}
+async function finishTimelineSeek() {
+  const seek=timelineSeek;if(!seek)return;
+  await go($("timeline").value);
+  if(timelineSeek!==seek||seek.document!==doc||seek.generation!==readGeneration)return;
+  timelineSeek=null;updateTimeline();
+  if(seek.playing&&viewVisible)startPlayback(false);else {doc?.setPlayback?.(frameIndex,false);displayPlayback(false);}
+}
+$("timeline").addEventListener("pointerdown",beginTimelineSeek);
+$("timeline").addEventListener("input",e=>{beginTimelineSeek();go(e.target.value);});
+$("timeline").addEventListener("change",finishTimelineSeek);
+window.addEventListener("pointerup",finishTimelineSeek);
+window.addEventListener("pointercancel",finishTimelineSeek);
+$("timeline").addEventListener("blur",finishTimelineSeek);
 $("frame-number").addEventListener("change", e => { stop(); go(Number(e.target.value) - 1); });
+$("frame-number").addEventListener("keydown", e => {if(e.key==='Enter'){e.preventDefault();stop();go(Number(e.target.value)-1);e.target.blur();}});
 $("previous").onclick = () => { stop(); go(frameIndex - 1); };
 $("next").onclick = () => { stop(); go(frameIndex + 1); };
-$("play").onclick = () => {
-  if (timer) return stop();
-  if (!doc || doc.count < 2) return;
-  if(frameIndex===doc.count-1 && streamComplete)go(0);
+function startPlayback(restart=true) {
+  if (timer!==null||!viewVisible||!doc?.count || (doc.count < 2 && streamComplete)) return;
+  if(restart&&frameIndex===doc.count-1 && streamComplete)go(0);
   displayPlayback(true);
+  doc.setPlayback?.(frameIndex,true);doc.prefetch?.(frameIndex,playback.step);
   const run=++playbackGeneration;
   let previous=performance.now(), accumulator=0;
   const tick=async now=>{
     if(timer===null||run!==playbackGeneration)return;
+    if(streamComplete&&doc.count===1){stop();return;}
     accumulator+=Math.min(now-previous,250)*playback.fps*playback.speed/1000;previous=now;
     const steps=Math.floor(accumulator);
     if(steps>0){
@@ -301,32 +340,35 @@ $("play").onclick = () => {
         else if(playback.loop)target%=doc.count;
         else {go(doc.count-1);stop();return;}
       }
-      if(target!==frameIndex)await go(target);
+      if(target!==frameIndex){await go(target);previous=performance.now();}
     }
-    if(timer!==null&&run===playbackGeneration)timer=requestAnimationFrame(tick);
+    if(timer!==null&&run===playbackGeneration){doc.setPlayback?.(frameIndex,true);doc.prefetch?.(frameIndex,playback.step);timer=requestAnimationFrame(tick);}
   };
   timer=requestAnimationFrame(tick);
-};
-$("playback-settings").onclick=()=>{
-  stop();$("animation-fps").value=playback.fps;$("playback-speed").value=playback.speed;
-  $("playback-step").value=playback.step;$("playback-loop").checked=playback.loop;$("playback-dialog").showModal();
-};
-$("playback-apply").onclick=event=>{
-  if(!$("playback-dialog").querySelector('form').reportValidity()){event.preventDefault();return;}
-  playback={fps:Number($("animation-fps").value),speed:Number($("playback-speed").value),step:Number($("playback-step").value),loop:$("playback-loop").checked};
-};
+}
+$("play").onclick=()=>{if(timer!==null||timelineSeek?.playing)return stop();startPlayback();};
+function updatePlaybackSettings(){
+  const fps=Number($("animation-fps").value),step=Number($("playback-step").value),speed=Number($("playback-speed").value);
+  if(!Number.isInteger(fps)||fps<1||fps>120||!Number.isInteger(step)||step<1||step>10000||!Number.isFinite(speed)||speed<=0)return;
+  playback={fps,speed,step,loop:$("playback-loop").checked};
+}
+for(const id of ['animation-fps','playback-speed','playback-step','playback-loop'])$(id).addEventListener('input',updatePlaybackSettings);
 $("reset").onclick = () => views?.fit();
+$("view-reset").onclick = () => views?.fit();
+$("navigation-mode").onchange = event => views?.setMode(event.target.value);
 $("orientation").onchange = event => views?.setOrientation(event.target.value);
 $("layout").onchange = event => views?.setLayout(event.target.value);
 $("expand").onclick = () => views?.toggleExpand();
 for (const mode of ["rotate", "pan", "zoom", "select", "box"]) $(mode).onclick = () => views?.setMode(mode);
 $("first").onclick = () => { stop(); go(0); };
 $("last").onclick = () => { stop(); if (doc) go(doc.count - 1); };
-for (const id of ["style", "palette", "radius-scale", "cell", "labels", "hbonds", "wrap"]) $(id).onchange = () => { stop(); status(""); scheduleRender(); };
+// Display changes repaint the current scene without altering playback intent.
+// The existing playback loop reads these same settings for subsequent frames.
+for (const id of ["style", "palette", "radius-scale", "cell", "labels", "hbonds", "wrap"]) $(id).onchange = () => { status(""); scheduleRender(); };
 function openPanel(panel) { if(!panel.open)panel.show(); }
 for(const id of ['display-dialog','drift-dialog'])StructureControls.draggable($(id));
 new ResizeObserver(updateTimeline).observe($("ticks"));
-$("trajectory-tools").addEventListener("toggle",updateTimeline);
+inspector=new StructureInspector.Panel(()=>views?.resizeToLayout(),index=>{selection=[index];selectionChanged();});
 $("drift-settings").onclick=()=>{
   $("drift-reference").max=Math.max(0,(doc?.count||1)-1);
   openPanel($("drift-dialog"));
@@ -359,9 +401,17 @@ $("drift-apply").onclick=async()=>{
   }catch(error){$("drift-error").textContent=error.message;}finally{$("drift-apply").disabled=false;}
 };
 $("source-toggle").onclick = () => { stop(); $("source-panel").hidden = !$("source-panel").hidden; if(doc)$("source").value=activeRecord.text; };
-request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Structure Viewer", version: "0.13.2" }, appCapabilities: {} })
-  .then(() => { send("ui/notifications/initialized", {}); status("已连接，等待文件…"); })
+request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Atom Lens", version: "0.13.3" }, appCapabilities: {} })
+  .then(result => {
+    concurrentIndex=result?.hostCapabilities?.atomLensConcurrentIndex===true;
+    desktopLanguage=['en','zh-CN'].includes(result?.hostContext?.atomLensLanguage);
+    if(desktopLanguage)StructureI18n.setLanguage(result.hostContext.atomLensLanguage);
+    send("ui/notifications/initialized", {});
+  })
   .catch(error => status(`连接失败：${error.message}`, true));
+document.addEventListener('atomlens-language-change',event=>{
+  if(desktopLanguage)send('atomlens/language',{language:event.detail});
+});
 
 async function openStructure(files, format = $("import-format").value) {
   const file = files[0];
@@ -379,7 +429,7 @@ async function openStructure(files, format = $("import-format").value) {
     }
   }
   $("atom-title").textContent = $("measurement").textContent = $("atom-list").textContent = "";
-  $("frame-total").textContent = "—"; $("frame-summary").textContent = ""; $("timeline").disabled = true;
+  $("frame-total").textContent = "—"; $("timeline").disabled = true;
   $("source-panel").hidden = true; $("source-toggle").hidden = /\.traj$/i.test(file.name);
   $("filename").removeAttribute("data-empty-title"); $("filename").textContent = file.name; $("import-note").textContent=""; status("");
   try {
@@ -480,7 +530,7 @@ $("snapshot-save").onclick=async()=>{
 };
 
 $("open-path").onclick=async()=>{
-  stop();$("companion-paths").value=(fileRef?.companions||[]).map(item=>item.path).join("\n");$("structure-path").value=fileRef?.path||'';$("path-error").textContent='';$("path-dialog").showModal();
+  stop();$("companion-paths").value='';$("structure-path").value=fileRef?.directory||fileRef?.path||'';$("path-error").textContent='';$("path-dialog").showModal();
   try {const r=await request('tools/call',{name:'open_structure_path',arguments:{}});if(r.structuredContent?.host){hostName=r.structuredContent.host;$("path-host").textContent=`${hostName} 上的完整路径`;}}catch(e){$("path-error").textContent=e.message;}
 };
 $("path-close").onclick=()=>$("path-dialog").close();
@@ -490,17 +540,41 @@ $("path-load").onclick=async()=>{
   try {
     const result=await request('tools/call',{name:'open_structure_path',arguments:{path,companions:$("companion-paths").value.split(/\r?\n/).map(line=>line.trim()).filter(Boolean)}});
     if(result.isError)throw Error(result.content?.find(c=>c.text)?.text||'打开失败');
-    if(!result.structuredContent?.file)throw Error('未返回结构文件');
-    $("path-dialog").close();await loadFile(result.structuredContent.file);
+    if(!result.structuredContent?.file && !result.structuredContent?.choices)throw Error('未返回结构文件');
+    $("path-dialog").close();await openSelectionResult(result.structuredContent);
   }catch(e){$("path-error").textContent=e.message;}finally{$("path-load").disabled=false;}
 };
 $("structure-path").onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();$("path-load").click();}};
 
-const interfaceSettings = $("interface-settings");
+let discoveredChoices=[];
+async function openSelectionResult(result){
+  if(result.file)return loadFile(result.file);
+  discoveredChoices=result.choices||[];
+  if(!discoveredChoices.length)return;
+  $("discovery-path").textContent=result.directory||'';
+  $("discovery-options").replaceChildren(...discoveredChoices.map((item,index)=>new Option(item.label,String(index))));
+  $("discovery-dialog").showModal();
+}
+$("discovery-close").onclick=()=>$("discovery-dialog").close();
+$("discovery-open").onclick=()=>{
+  const choice=discoveredChoices[Number($("discovery-options").value)];
+  if(choice){$("discovery-dialog").close();loadFile(choice.file);}
+};
+
+const headerMenus = [...document.querySelectorAll(".header-menu,.bottom-menu")];
+for (const menu of headerMenus) {
+  menu.addEventListener("toggle", () => {
+    if(menu.open)for(const other of headerMenus)if(other!==menu)other.open=false;
+  });
+  menu.addEventListener("click", event => {
+    // Leave selects and checkboxes open for repeated adjustments. An action
+    // can open its own dialog; do not steal focus back from that dialog.
+    if(event.target.closest("[data-close-menu]"))menu.open=false;
+  });
+}
 document.addEventListener("pointerdown", event => {
-  if (interfaceSettings.open && !interfaceSettings.contains(event.target) && !event.target.closest("#chem-choice-menu")) {
-    interfaceSettings.open = false;
-  }
+  if(event.target.closest("#chem-choice-menu"))return;
+  for(const menu of headerMenus)if(menu.open&&!menu.contains(event.target))menu.open=false;
 });
 window.addEventListener("keydown", event => {
   const preset=axisShortcut(event);
@@ -508,9 +582,9 @@ window.addEventListener("keydown", event => {
     event.preventDefault();
     views.setOrientation(preset);
   }
-  if (event.key === "Escape" && interfaceSettings.open && !document.querySelector("#chem-choice-menu")) {
-    interfaceSettings.open = false;
-    interfaceSettings.querySelector("summary").focus();
+  if (event.key === "Escape" && !document.querySelector("#chem-choice-menu")) {
+    const menu=headerMenus.find(menu=>menu.open);
+    if(menu){menu.open=false;menu.querySelector("summary").focus();event.preventDefault();}
   }
 });
 const themeControls = {mode: $("theme-mode"), fontSize: $("theme-size")};

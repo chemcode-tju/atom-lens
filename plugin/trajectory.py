@@ -7,12 +7,23 @@ import os
 import stat
 from ase_trajectory import read_batch
 from vasp_trajectory import read_vasp_batch
-from file_snapshot import IncompleteFrame, is_snapshot, open_snapshot
+from file_snapshot import IncompleteFrame, content_stamp, is_snapshot, open_snapshot
+
+
+def is_trajectory_index(method: str, params: dict[str, Any]) -> bool:
+    """Identify read-only index requests that can run beside foreground reads."""
+    if method != "tools/call" or not isinstance(params, dict):
+        return False
+    arguments = params.get("arguments")
+    if not isinstance(arguments, dict) or arguments.get("indexOnly") is not True:
+        return False
+    name = params.get("name")
+    return name == "read_trajectory_frames" or (name == "structure_import" and arguments.get("action") == "frames")
 
 
 def file_version(info: Any) -> str:
     """Detect replacement, truncation and in-place writes between requests."""
-    signature = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+    signature = (info.st_dev, info.st_ino, info.st_size, *content_stamp(info))
     return hashlib.sha256(repr(signature).encode()).hexdigest()
 
 
@@ -48,7 +59,7 @@ def xyz_index(stream: BinaryIO, offset: int, end: int, limit: int, frozen: bool 
                 cursor = start  # Let the next frame own its leading blank lines.
             break
         count = rows[i].strip()
-        if not count.isdigit() or not 1 <= int(count) <= 100000:
+        if not count.isdigit() or not 1 <= int(count) <= 1000000:
             if offsets:
                 cursor = start
                 break
@@ -153,8 +164,8 @@ def read_frames(params: dict[str, Any]) -> dict[str, Any]:
             if not line.strip().isdigit():
                 raise ValueError(f"字节 {stream.tell() - len(line)} 处不是原子数。")
             atom_count = int(line.strip())
-            if not 1 <= atom_count <= 100000:
-                raise ValueError("原子数必须在 1–100000 范围内。")
+            if not 1 <= atom_count <= 1000000:
+                raise ValueError("原子数必须在 1–1000000 范围内。")
             for row in range(atom_count + 1):
                 line = read_line(stream, 8388608 - frame_size)
                 if not line or (row > 0 and not line.strip()):
@@ -210,7 +221,7 @@ def frozen_xyz(stream: BinaryIO, offset: int, limit: int, index_only: bool, end:
         if not line:
             blocks.extend(rows)
             break
-        if not line.strip().isdigit() or not 1 <= int(line) <= 100000:
+        if not line.strip().isdigit() or not 1 <= int(line) <= 1000000:
             if stream.tell() == end and not line.endswith(b"\n"):
                 incomplete = True
                 break

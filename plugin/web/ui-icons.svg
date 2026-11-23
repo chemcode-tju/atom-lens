@@ -55,4 +55,5 @@
   <symbol id="i-timeline" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10.5h12M4 4v3m4-4v4m4-3v3"/><circle cx="6" cy="10.5" r="1.6" fill="var(--panel, white)"/></g></symbol>
   <symbol id="i-snapshot" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.1h3.2l1-1.8h3.6l1 1.8H14v7.6H2Z"/><circle cx="8" cy="8.8" r="2.2"/></g></symbol>
   <symbol id="i-multi-view" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><rect x="1.8" y="2.2" width="12.4" height="11.6" rx="1.8"/><path d="M8 2.2v11.6M1.8 8h12.4"/></g></symbol>
+  <symbol id="i-table" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M2 6h12M2 10h12M6 2v12"/></g></symbol>
 </svg>

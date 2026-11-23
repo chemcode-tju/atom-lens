@@ -92,12 +92,24 @@ console.log('Selection updates preserve the atom model and camera, including cle
  assert.deepEqual(resizes.at(-1),[470,600]);assert.ok(pane.resizeCover);
  flush();assert.ok(pane.resizeCover);flush();assert.equal(pane.resizeCover,null);assert.equal(removals,1);
  canvas.clientWidth=480;resizeCallback();settle();assert.equal(copies,2);assert.equal(removals,2);
+ // Footer expansion changes height in one step, so the canvas must already
+ // match before the next paint, with no delayed white cover or extra redraw.
+ canvas.clientHeight=540;interaction.resizeToLayout();
+ assert.deepEqual(resizes.at(-1),[480,540]);assert.equal(pane.resizeCover,null);
+ const afterFooter=resizes.length;resizeCallback();settle();
+ assert.equal(resizes.length,afterFooter);assert.equal(copies,2);
+ // Collapsing during a sidebar drag must also cancel its pending snapshot.
+ canvas.clientWidth=490;resizeCallback();assert.ok(pane.resizeCover);
+ canvas.clientHeight=600;interaction.resizeToLayout();
+ assert.deepEqual(resizes.at(-1),[490,600]);assert.equal(pane.resizeCover,null);
+ assert.equal(timers.size,0);assert.equal(removals,3);
+ const afterInterrupt=resizes.length;settle();assert.equal(resizes.length,afterInterrupt);
  interaction.mode='box';let boxes=0;interaction.onBox=()=>boxes++;
  const mouse={button:0,pointerId:1,clientX:100,clientY:100,preventDefault(){}};
  layer.onpointerdown(mouse);layer.onpointerup(mouse);assert.equal(boxes,0);
  layer.onpointerdown(mouse);layer.onpointermove({...mouse,clientX:102});layer.onpointerup({...mouse,clientX:102});assert.equal(boxes,0);
  layer.onpointerdown(mouse);layer.onpointercancel();layer.onpointerup(mouse);assert.equal(boxes,0);
- console.log('Settled resize paints once; duplicate sizes and box-mode clicks do not reset the view or selection.');
+ console.log('Sidebar resize settles once; footer toggles paint immediately and clear stale covers without resetting the view.');
 }
 
 // Shift bypasses rotation/zoom, ray-picks the front atom, and toggles a dragged

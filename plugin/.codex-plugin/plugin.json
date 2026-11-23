@@ -1,16 +1,16 @@
 {
   "name": "structure-viewer",
-  "version": "0.13.2",
-  "description": "Read-only structure viewer with switchable themes, on-demand MD trajectories, atom selection and native snapshot export.",
+  "version": "0.13.3",
+  "description": "Atom Lens: atomic structures and trajectories in the Codex sidebar on Mac, from local files or a connected server.",
   "author": {
     "name": "liyang-tju"
   },
   "license": "MIT",
   "mcpServers": "./.mcp.json",
   "interface": {
-    "displayName": "Structure Viewer",
+    "displayName": "Atom Lens",
     "shortDescription": "原子结构与轨迹查看、选择与测量",
-    "longDescription": "Open POSCAR, CONTCAR and XDATCAR by their original paths through the Structure Viewer thread tab, locally or on the connected remote host. Open LAMMPS trajectories with companion files, GROMACS GRO, ASE trajectories, XYZ/extxyz, PDB and CIF. Includes element visibility, box selection, measurements and snapshots.",
+    "longDescription": "View atomic structures and MD trajectories in the Codex sidebar. Open local Mac files or files on a connected server, select atoms, measure geometry, and export snapshots and animations. Formerly Structure Viewer.",
     "category": "Education & Research",
     "capabilities": [
       "Interactive",

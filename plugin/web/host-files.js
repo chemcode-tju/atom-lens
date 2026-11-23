@@ -6,6 +6,7 @@ const StructureHostFiles = (() => {
     return reply.structuredContent;
   }
   async function open(ref) {
+    if(typeof ref.metadataText==='string')return new File([ref.metadataText],ref.name);
     const binding = ref.token ? {token:ref.token} : {};
     const meta = await call({...binding,action:'stat'});
     if (!meta.supported) return null;
@@ -31,6 +32,8 @@ const StructureHostFiles = (() => {
         return source;
       },
       convert(options){return read({action:"convert",...options});},
+      xtcIndex(offset,limit){return read({action:'frames',format:'xtc',offset,indexOnly:limit>1,frameLimit:Math.min(limit,64)});},
+      trrIndex:meta.trrIndex ? (offset,limit)=>read({action:'frames',format:'trr',offset,indexOnly:true,frameLimit:Math.min(limit,64)}) : null,
       slice(start=0,end=meta.size) {
         end=Math.min(end,meta.size);
         const bytes=async()=>{
@@ -46,7 +49,7 @@ const StructureHostFiles = (() => {
       },
       text(){return this.slice().text();},
       async openMD(format) {
-        const batch=args=>read({action:'frames',format,offset:args.offset,indexOnly:!!args.indexOnly});
+        const batch=args=>read({action:'frames',format,offset:args.offset,indexOnly:!!args.indexOnly,frameLimit:args.frameLimit||1});
         const first=await batch({offset:0});
         const source=new StructureTrajectory.HostSource(batch,{...first,version:meta.version});
         let seed=first.text;
