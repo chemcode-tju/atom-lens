@@ -51,8 +51,15 @@ const event=name=>element('timeline').events.get(name);
     context.document.activeElement=null;
     context.updateTimeline();
   };
-  frameNumber.events.get('keydown')({key:'Enter',preventDefault(){},target:frameNumber});
+  await frameNumber.events.get('keydown')({key:'Enter',preventDefault(){},target:frameNumber});
   assert.equal(context.frameIndex,74);assert.equal(Number(frameNumber.value),75);
+  assert.equal(context.timer,null,'Entering a frame while paused must stay paused');
+  context.startPlayback();
+  frameNumber.value='110';
+  await frameNumber.events.get('change')({target:frameNumber});
+  assert.equal(context.frameIndex,109);
+  assert(playing,'Entering a frame while playing must resume at that frame');
+  context.stop();
 
   // Exercise the real display handlers against the running animation loop.
   // They must preserve both playing and paused states, including an async

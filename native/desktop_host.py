@@ -5,7 +5,7 @@ from __future__ import annotations
 port = 0
 max_request_bytes = 48 * 1048576
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import secrets
@@ -58,6 +58,33 @@ class DesktopHost(ThreadingHTTPServer):
     def server_close(self) -> None:
         self.sessions.close()
         super().server_close()
+
+    def opening_directory(self, session: str) -> str:
+        connection = self.connection(session)
+        try:
+            directory = self.profiles.directory(connection["profile"])
+        except (ValueError, OSError):
+            directory = None
+        return directory or "~"
+
+    def connection(self, session: str) -> dict:
+        for connection in self.sessions.state()["connections"]:
+            if connection["session"] == session:
+                return connection
+        raise ValueError("连接已关闭，请重新打开文件")
+
+    def remember_opening(self, connection: dict, result: dict) -> None:
+        selection = result.get("structuredContent") or {}
+        if result.get("isError"):
+            return
+        directory = selection.get("directory")
+        if not directory and (path := (selection.get("file") or {}).get("path")):
+            directory = str(PurePosixPath(path).parent)
+        if directory:
+            try:
+                self.profiles.remember_directory(connection["profile"], directory)
+            except (ValueError, OSError):
+                pass  # Keep opening usable even if the preferences file is unavailable.
 
 
 class DesktopHandler(BaseHTTPRequestHandler):
@@ -124,6 +151,8 @@ class DesktopHandler(BaseHTTPRequestHandler):
                 result = self.server.startup_state()
             elif route == "local-codex":
                 result = {"installed": codex_plugin_installed(find_codex())}
+            elif route == "location":
+                result = {"directory": self.server.opening_directory(request["session"])}
             elif route == "profiles":
                 action = request.get("action", "list")
                 if action == "save":
@@ -161,7 +190,13 @@ class DesktopHandler(BaseHTTPRequestHandler):
                 method = request["method"]
                 if method not in {"initialize", "ping", "tools/call", "resources/read", "resources/subscribe", "resources/unsubscribe", "atomlens/list-directory"}:
                     raise ValueError("不支持的桌面请求")
-                result = sessions.call(request["session"], method, request.get("params", {}))
+                params = request.get("params", {})
+                if method == "tools/call" and params.get("name") == "open_structure_path" and params.get("arguments", {}).get("path"):
+                    connection = self.server.connection(request["session"])
+                    result = sessions.call(request["session"], method, params)
+                    self.server.remember_opening(connection, result)
+                else:
+                    result = sessions.call(request["session"], method, params)
             else:
                 self.json_reply({"error": "Not found"}, 404)
                 return

@@ -7,7 +7,7 @@
 ### Mac：下载、拖动、直接打开
 
 > 当前 DMG 是本地预览包，尚未上传 GitHub Releases。以下为计划采用的普通用户安装方式；预览包仅支持 Apple Silicon、macOS 12 或更新版本。
-> 最新本地测试包为 `preview-12.dmg`。位置和「打开与连接」在查看器右上工具区左侧。成功连接一次后，下次启动会先重连服务器并默认打开远端查看器。后台索引与取帧并行需要 preview-8 或更新的服务器后端。
+> 最新本地测试包为 `preview-14.dmg`。独立 App 支持结构标签页、本地与远程结构分屏，以及按主机记住上次打开的目录。分屏或矮窗格会使用单行底栏，点击帧号可展开时间轴。后台索引与取帧并行需要 preview-8 或更新的服务器后端。
 
 1. 从 [Releases](https://github.com/liyang-tju/extxyz-extension/releases) 下载对应的 `.dmg` 安装包。
 2. 双击打开，将 **Atom Lens** 拖进 **Applications**。

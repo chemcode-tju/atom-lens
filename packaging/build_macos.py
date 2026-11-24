@@ -3,7 +3,7 @@ from __future__ import annotations
 
 # Configuration
 target_architecture = "arm64"
-preview_revision = 12
+preview_revision = 14
 python_download_url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.11.18%2B20261026-aarch64-apple-darwin-install_only_stripped.tar.gz"
 python_sha256 = "f3e1cd83a7f1d70e58b0d69102c18bd6867d2f973068dc5cbfd5822e445c66df"
 signing_identity = "-"

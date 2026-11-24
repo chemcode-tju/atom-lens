@@ -10,8 +10,10 @@ let snapshotHost = null, activeRecord = null, snapshotSaving = false;
 let navigationTarget = null, navigationTask = null;
 let playbackGeneration = 0;
 let timelineSeek=null,viewVisible=true,resumeWhenVisible=false,tickLayout='';
+let comparisonView=false;
 let concurrentIndex=false;
 let desktopLanguage=false;
+let desktopTabs=false;
 let inspector;
 let playback = {fps:60, speed:1, step:1, loop:true};
 function afterPaint(callback) { requestAnimationFrame(() => setTimeout(callback, 0)); }
@@ -55,6 +57,7 @@ function updateTimeline() {
   $("timeline").max = doc.count - 1; if(!timelineSeek)$("timeline").value = frameIndex; $("timeline").disabled = doc.count < 2;
   $("frame-number").max = doc.count;
   if(document.activeElement!==$("frame-number"))$("frame-number").value = frameIndex + 1;
+  $("frame-current").textContent = String(frameIndex + 1);
   const total = String(doc.count) + (streamComplete ? "" : "+");
   $("frame-total").textContent = total;
   const single = streamComplete && doc.count === 1;
@@ -65,7 +68,6 @@ function updateTimeline() {
   $("first").disabled = $("previous").disabled = frameIndex === 0;
   $("next").disabled = $("last").disabled = frameIndex === doc.count - 1;
   $("play").disabled = !doc.count || single;
-  $("frame-number").closest(".frame-label").style.setProperty("--frame-digits", Math.max(2, total.length) + "ch");
   if (single) return;
   const width=$("ticks").clientWidth;
   if(!width)return;
@@ -83,7 +85,7 @@ function render(reset = false, strict = false) {
   try {
     if(!activeRecord)return;
     frameData = activeRecord.frame;
-    if (!views) views = new StructureViews($("viewports"), chooseAtom, chooseBox);
+    if (!views) views = new StructureViews($("viewports"), chooseAtom, chooseBox, comparisonView);
     selection = selection.filter(i => i < frameData.atoms.length);
     views.renderScene(StructureScene.build(frameData,sceneSettings()),selection,reset);
     updateTimeline();
@@ -186,6 +188,7 @@ async function go(index) {
 }
 function discardDocument() {
   doc?.dispose(); doc=null; activeRecord=null; navigationTarget=null; navigationTask=null;
+  setTimelineOpen(false);
   document.body.classList.remove("has-structure");
   $("drift-settings").disabled = true;
   inspector?.clear();
@@ -204,6 +207,7 @@ async function showDocument(store,generation) {
 }
 async function loadFile(file, reload = false) {
   if (!file?.resourceUri || (!reload && (fileRef?.resourceUri === file.resourceUri || fileRef?.linkUri === file.resourceUri) && (doc || loading))) return;
+  if(desktopTabs)send('atomlens/file',{name:file.name,path:file.path});
   pickedFile=false; binaryTrajectory=/\.traj$/i.test(file.name); clearFollow(); resetDisplayState();
   const generation = ++readGeneration;
   stop(); loading = true; streamComplete = false;
@@ -219,6 +223,7 @@ async function loadFile(file, reload = false) {
       file = {...reply.structuredContent.file, linkUri:file.resourceUri};
       fileRef = file;
       $("filename").textContent = file.name;
+      if(desktopTabs)send('atomlens/file',{name:file.name,path:file.path});
     }
     if($("import-format").value!=="auto" || !/^(POSCAR|CONTCAR|XDATCAR)$|\.(xyz|extxyz|traj|vasp)$/i.test(file.name) || file.companions?.length) {
       const files=await Promise.all([file,...(file.companions||[])].map(StructureHostFiles.open));
@@ -271,8 +276,12 @@ async function loadFullFile(file) {
 window.addEventListener("message", event => {
   if (event.source !== window.parent || event.data?.jsonrpc !== "2.0") return;
   const message = event.data;
+  if(message.method==='atomlens/import'&&desktopTabs){openStructure(message.params.files);return;}
   if(message.method==='atomlens/language'&&desktopLanguage){StructureI18n.setLanguage(message.params?.language);return;}
   if(message.method==='atomlens/visibility'){
+    comparisonView=Boolean(message.params?.comparison);
+    updateToolbarLayout();
+    views?.setComparison(comparisonView);
     if(viewVisible===Boolean(message.params?.visible))return;
     viewVisible=Boolean(message.params?.visible);doc?.setActive?.(viewVisible);
     if(!viewVisible){const playing=timer!==null||timelineSeek?.playing;stop();resumeWhenVisible=playing;}
@@ -303,21 +312,30 @@ function beginTimelineSeek() {
   const playing=timer!==null;stop();
   timelineSeek={playing,document:doc,generation:readGeneration};doc?.setPlayback?.(frameIndex,true);displayPlayback(playing);
 }
-async function finishTimelineSeek() {
+async function finishTimelineSeek(target=$("timeline").value) {
   const seek=timelineSeek;if(!seek)return;
-  await go($("timeline").value);
+  await go(target);
   if(timelineSeek!==seek||seek.document!==doc||seek.generation!==readGeneration)return;
   timelineSeek=null;updateTimeline();
   if(seek.playing&&viewVisible)startPlayback(false);else {doc?.setPlayback?.(frameIndex,false);displayPlayback(false);}
 }
 $("timeline").addEventListener("pointerdown",beginTimelineSeek);
 $("timeline").addEventListener("input",e=>{beginTimelineSeek();go(e.target.value);});
-$("timeline").addEventListener("change",finishTimelineSeek);
-window.addEventListener("pointerup",finishTimelineSeek);
-window.addEventListener("pointercancel",finishTimelineSeek);
-$("timeline").addEventListener("blur",finishTimelineSeek);
-$("frame-number").addEventListener("change", e => { stop(); go(Number(e.target.value) - 1); });
-$("frame-number").addEventListener("keydown", e => {if(e.key==='Enter'){e.preventDefault();stop();go(Number(e.target.value)-1);e.target.blur();}});
+for(const event of ["change","blur"])$("timeline").addEventListener(event,()=>finishTimelineSeek());
+for(const event of ["pointerup","pointercancel"])window.addEventListener(event,()=>finishTimelineSeek());
+function seekFrameNumber(input) {
+  if(!input.value || !Number.isFinite(Number(input.value)))return;
+  beginTimelineSeek();
+  return finishTimelineSeek(Number(input.value)-1);
+}
+$("frame-number").addEventListener("change", e => seekFrameNumber(e.target));
+$("frame-number").addEventListener("keydown", e => {
+  if(e.key!=="Enter")return;
+  e.preventDefault();
+  const seek=seekFrameNumber(e.target);
+  e.target.blur();
+  return seek;
+});
 $("previous").onclick = () => { stop(); go(frameIndex - 1); };
 $("next").onclick = () => { stop(); go(frameIndex + 1); };
 function startPlayback(restart=true) {
@@ -404,6 +422,7 @@ $("source-toggle").onclick = () => { stop(); $("source-panel").hidden = !$("sour
 request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "Atom Lens", version: "0.13.3" }, appCapabilities: {} })
   .then(result => {
     concurrentIndex=result?.hostCapabilities?.atomLensConcurrentIndex===true;
+    desktopTabs=result?.hostCapabilities?.atomLensTabs===true;
     desktopLanguage=['en','zh-CN'].includes(result?.hostContext?.atomLensLanguage);
     if(desktopLanguage)StructureI18n.setLanguage(result.hostContext.atomLensLanguage);
     send("ui/notifications/initialized", {});
@@ -423,6 +442,7 @@ async function openStructure(files, format = $("import-format").value) {
   frameIndex = 0; frameData = null; loading = true; streamComplete = false;
   if (views) {
     for (const pane of views.panes) {
+      if(!pane.ready)continue;
       pane.ready = false;
       pane.viewer.removeAllModels(); pane.viewer.removeAllShapes(); pane.viewer.removeAllLabels();
       pane.viewer.render();
@@ -439,6 +459,7 @@ async function openStructure(files, format = $("import-format").value) {
     $("source-toggle").hidden = /\.traj$/i.test(imported.name);
     await showDocument(imported.store, generation);
     if (generation !== readGeneration) return;
+    if(desktopTabs)send('atomlens/file',{name:imported.name});
     showImportNote(imported.note);
     return {name: imported.name};
   } catch (error) {
@@ -456,7 +477,9 @@ $("file-picker").onchange = () => {
 document.addEventListener("dragover", event => event.preventDefault());
 document.addEventListener("drop", event => {
   event.preventDefault(); const files = Array.from(event.dataTransfer.files);
-  if (files.length) openStructure(files);
+  if(files.length){
+    if(desktopTabs)send('atomlens/drop',{files});else openStructure(files);
+  }
 });
 window.addEventListener("pagehide", () => { stop(); discardDocument(); });
 function snapshotOptions(){return {dpi:Number($("snapshot-dpi").value),format:$("snapshot-format").value,transparent:$("snapshot-transparent").checked,crop:$("snapshot-crop").checked};}
@@ -530,7 +553,12 @@ $("snapshot-save").onclick=async()=>{
 };
 
 $("open-path").onclick=async()=>{
-  stop();$("companion-paths").value='';$("structure-path").value=fileRef?.directory||fileRef?.path||'';$("path-error").textContent='';$("path-dialog").showModal();
+  if(!desktopTabs)stop();
+  $("companion-paths").value='';$("structure-path").value=fileRef?.directory||fileRef?.path||'';$("path-error").textContent='';$("path-dialog").showModal();
+  if(desktopTabs&&!$("structure-path").value){
+    const previous=await request('atomlens/location',{}).catch(()=>null);
+    if($("path-dialog").open&&!$("structure-path").value&&previous?.directory!=='~')$("structure-path").value=previous?.directory||'';
+  }
   try {const r=await request('tools/call',{name:'open_structure_path',arguments:{}});if(r.structuredContent?.host){hostName=r.structuredContent.host;$("path-host").textContent=`${hostName} 上的完整路径`;}}catch(e){$("path-error").textContent=e.message;}
 };
 $("path-close").onclick=()=>$("path-dialog").close();
@@ -538,10 +566,11 @@ $("path-load").onclick=async()=>{
   const path=$("structure-path").value.trim();if(!path)return;
   $("path-load").disabled=true;$("path-error").textContent='';
   try {
-    const result=await request('tools/call',{name:'open_structure_path',arguments:{path,companions:$("companion-paths").value.split(/\r?\n/).map(line=>line.trim()).filter(Boolean)}});
+    const args={path,companions:$("companion-paths").value.split(/\r?\n/).map(line=>line.trim()).filter(Boolean)};
+    const result=desktopTabs?await request('atomlens/open-path',args):await request('tools/call',{name:'open_structure_path',arguments:args});
     if(result.isError)throw Error(result.content?.find(c=>c.text)?.text||'打开失败');
     if(!result.structuredContent?.file && !result.structuredContent?.choices)throw Error('未返回结构文件');
-    $("path-dialog").close();await openSelectionResult(result.structuredContent);
+    $("path-dialog").close();if(!desktopTabs)await openSelectionResult(result.structuredContent);
   }catch(e){$("path-error").textContent=e.message;}finally{$("path-load").disabled=false;}
 };
 $("structure-path").onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();$("path-load").click();}};
@@ -562,9 +591,38 @@ $("discovery-open").onclick=()=>{
 };
 
 const headerMenus = [...document.querySelectorAll(".header-menu,.bottom-menu")];
+const compactViewport=window.matchMedia("(max-width: 640px), (max-height: 450px)");
+function updateToolbarLayout() {
+  const splitView=comparisonView||$("viewports").dataset.layout!=="single";
+  const compact=splitView||compactViewport.matches||$("compact-footer").checked;
+  $("viewer-footer").toggleAttribute("data-compact",compact);
+}
+function setTimelineOpen(open) {
+  const toolbar=$("bottom-toolbar");
+  if(!open&&toolbar.classList.contains("timeline-open")&&timelineSeek)finishTimelineSeek();
+  toolbar.classList.toggle("timeline-open",open);
+  $("frame-toggle").setAttribute("aria-expanded",String(open));
+}
+compactViewport.addEventListener("change",updateToolbarLayout);
+new MutationObserver(updateToolbarLayout).observe($("viewports"),{attributeFilter:["data-layout"]});
+$("compact-footer").onchange=()=>{updateToolbarLayout();views?.resizeToLayout();};
+updateToolbarLayout();
+$("frame-toggle").onclick=()=>{
+  const open=!$("bottom-toolbar").classList.contains("timeline-open");
+  if(open)for(const menu of headerMenus)menu.open=false;
+  setTimelineOpen(open);
+};
+$("compact-playback").onclick=()=>{
+  $("playback-menu").open=true;
+  $("animation-fps").focus();
+};
+$("compact-inspector").onclick=()=>inspector.open($("structure-inspector").hidden);
 for (const menu of headerMenus) {
   menu.addEventListener("toggle", () => {
-    if(menu.open)for(const other of headerMenus)if(other!==menu)other.open=false;
+    if(menu.open){
+      for(const other of headerMenus)if(other!==menu)other.open=false;
+      setTimelineOpen(false);
+    }
   });
   menu.addEventListener("click", event => {
     // Leave selects and checkboxes open for repeated adjustments. An action
@@ -575,6 +633,7 @@ for (const menu of headerMenus) {
 document.addEventListener("pointerdown", event => {
   if(event.target.closest("#chem-choice-menu"))return;
   for(const menu of headerMenus)if(menu.open&&!menu.contains(event.target))menu.open=false;
+  if(!event.target.closest("#timeline-panel,#frame-toggle")&&$("bottom-toolbar").classList.contains("timeline-open"))setTimelineOpen(false);
 });
 window.addEventListener("keydown", event => {
   const preset=axisShortcut(event);
@@ -584,7 +643,12 @@ window.addEventListener("keydown", event => {
   }
   if (event.key === "Escape" && !document.querySelector("#chem-choice-menu")) {
     const menu=headerMenus.find(menu=>menu.open);
-    if(menu){menu.open=false;menu.querySelector("summary").focus();event.preventDefault();}
+    if(menu){
+      menu.open=false;const summary=menu.querySelector("summary");
+      (summary.getClientRects().length?summary:$("more-tools")).focus();event.preventDefault();
+    }else if($("bottom-toolbar").classList.contains("timeline-open")){
+      setTimelineOpen(false);$("frame-toggle").focus();event.preventDefault();
+    }
   }
 });
 const themeControls = {mode: $("theme-mode"), fontSize: $("theme-size")};

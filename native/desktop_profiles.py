@@ -16,6 +16,13 @@ import tempfile
 import uuid
 
 
+def valid_directory(value: object) -> bool:
+    return (
+        isinstance(value, str) and len(value) <= 4096 and value.startswith("/")
+        and "\0" not in value and "archive" not in Path(value).parts
+    )
+
+
 def normalize_profile(profile: dict[str, Any]) -> dict[str, Any]:
     """Validate editable fields while leaving SSH files and remote hosts untouched."""
     if not isinstance(profile, dict):
@@ -64,12 +71,18 @@ class ProfileStore:
                 profile = {"id": str(uuid.UUID(item["id"])), **normalize_profile(item)}
                 if type(item.get("codexInstalled")) is bool:
                     profile["codexInstalled"] = item["codexInstalled"]
+                if valid_directory(item.get("lastDirectory")):
+                    profile["lastDirectory"] = item["lastDirectory"]
                 profiles.append(profile)
             if len({item["id"] for item in profiles}) != len(profiles):
                 raise ValueError("服务器标识重复")
             last = data.get("lastConnected")
-            return {"version": 1, "profiles": profiles,
+            local_directory = data.get("lastDirectory")
+            data = {"version": 1, "profiles": profiles,
                     "lastConnected": last if any(item["id"] == last for item in profiles) else None}
+            if valid_directory(local_directory):
+                data["lastDirectory"] = local_directory
+            return data
         except (ValueError, KeyError, TypeError, AttributeError) as error:
             raise ValueError(f"无法读取服务器列表，原文件未修改：{self.path}") from error
 
@@ -79,6 +92,27 @@ class ProfileStore:
     def last_connected(self) -> dict[str, Any] | None:
         data = self.read()
         return next((item for item in data["profiles"] if item["id"] == data["lastConnected"]), None)
+
+    @staticmethod
+    def location_record(data: dict[str, Any], profile: dict[str, Any] | None) -> dict[str, Any]:
+        if profile is None:
+            return data
+        return next((item for item in data["profiles"] if all(
+            item[key] == profile.get(key) for key in ("id", "host", "config", "python")
+        )), {})
+
+    def directory(self, profile: dict[str, Any] | None) -> str | None:
+        return self.location_record(self.read(), profile).get("lastDirectory")
+
+    def remember_directory(self, profile: dict[str, Any] | None, directory: str) -> None:
+        if not valid_directory(directory):
+            return
+        with self.locked():
+            data = self.read()
+            record = self.location_record(data, profile)
+            if record and record.get("lastDirectory") != directory:
+                record["lastDirectory"] = directory
+                self.write(data)
 
     @contextmanager
     def locked(self) -> Iterator[None]:
@@ -120,8 +154,9 @@ class ProfileStore:
             saved["id"] = str(uuid.UUID(saved["id"]))
             if identifier:
                 if all(previous[key] == saved[key] for key in ("host", "config", "python")):
-                    if "codexInstalled" in previous:
-                        saved["codexInstalled"] = previous["codexInstalled"]
+                    for key in ("codexInstalled", "lastDirectory"):
+                        if key in previous:
+                            saved[key] = previous[key]
                 elif data["lastConnected"] == identifier:
                     data["lastConnected"] = None
                 profiles = [saved if item["id"] == identifier else item for item in profiles]

@@ -108,6 +108,24 @@ class ProfileTests(unittest.TestCase):
             list(executor.map(save, range(12)))
         self.assertEqual({item["host"] for item in self.store.list()}, {f"server-{index}" for index in range(12)})
 
+    def test_opening_directories_survive_restart_per_host(self) -> None:
+        nd3 = self.store.save({"host": "nd3"})
+        nd2 = self.store.save({"host": "nd2"})
+        self.store.remember_directory(None, "/local/structures")
+        self.store.remember_directory(nd3, "/remote/project")
+        self.store.remember_directory(nd2, "/remote/other")
+        self.store.remember_directory(nd3, "/remote/archive/old")
+        restarted = ProfileStore(self.path)
+        self.assertEqual(restarted.directory(None), "/local/structures")
+        self.assertEqual(restarted.directory(nd2), "/remote/other")
+        renamed = restarted.save({**nd3, "name": "Lab"})
+        self.assertEqual(restarted.directory(renamed), "/remote/project")
+        changed = restarted.save({**renamed, "host": "other"})
+        self.assertIsNone(restarted.directory(changed))
+        restarted.remember_directory(renamed, "/remote/stale")
+        self.assertIsNone(restarted.directory(renamed))
+        self.assertEqual(restarted.directory(None), "/local/structures")
+
     def test_profile_http_changes_do_not_switch_the_active_connection(self) -> None:
         host = DesktopHost(self.path)
         thread = threading.Thread(target=host.serve_forever, daemon=True)
@@ -128,6 +146,11 @@ class ProfileTests(unittest.TestCase):
             self.assertEqual(len(post("profiles", {})["profiles"]), 2)
             post("profiles", {"action": "remove", "id": first["id"]})
             self.assertEqual(post("state", {}), before)
+            self.assertEqual(post("location", {"session": before["session"]})["directory"], "~")
+            post("rpc", {"session": before["session"], "method": "tools/call", "params": {
+                "name": "open_structure_path", "arguments": {"path": str(root / "examples/water.xyz")}
+            }})
+            self.assertEqual(post("location", {"session": before["session"]})["directory"], str(root / "examples"))
         finally:
             host.shutdown()
             host.server_close()

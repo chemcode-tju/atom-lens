@@ -5,10 +5,12 @@ const path=require('node:path');
 const vm=require('node:vm');
 
 class Element {
-  constructor(){this.value='';this.children=[];this.checked=false;this.disabled=false;this.textContent='';this.style={};this.contentWindow={postMessage(){}};this.isConnected=false;}
+  constructor(){this.value='';this.children=[];this.checked=false;this.disabled=false;this.textContent='';this.style={setProperty(){}};this.dataset={};this.attributes={};this.contentWindow={postMessage(){}};this.isConnected=false;}
   append(...items){this.children.push(...items);}
   before(item){item.isConnected=true;}
-  replaceChildren(...items){this.children=items;}
+  replaceChildren(...items){this.children=items;if(items[0]?.value)this.value=items[0].value;}
+  querySelector(){return null;}
+  setAttribute(name,value){this.attributes[name]=value;}
   addEventListener(){}
   remove(){this.isConnected=false;}
   showModal(){}
@@ -28,7 +30,7 @@ const localState={host:'本地 Mac',remote:false,session:'local',profile:null};
 let connections=[localState],current=localState;
 const state=()=>({...current,connections});
 const context=vm.createContext({
-  document:{getElementById:element,createElement:()=>new Element(),body:new Element(),addEventListener(){}},
+  document:{getElementById:element,createElement:()=>new Element(),createElementNS:()=>new Element(),body:new Element(),addEventListener(){}},
   window:{addEventListener(name,handler){listeners[name]=handler;}},
   location:{href:'http://127.0.0.1:1234/private/',origin:'http://127.0.0.1:1234'},URL,
   Option:function(text,value){this.text=text;this.value=value;this.setAttribute=()=>{};},
@@ -50,6 +52,10 @@ const context=vm.createContext({
       else{const profile=body.profile;current=profile?(connections.find(item=>item.host===profile.host)||{host:profile.host,remote:true,session:profile.host,profile}):localState;if(!connections.includes(current))connections.push(current);result=state();}
     }else if(route==='activate'){current=connections.find(item=>item.session===body.session);result=state();}
     else if(route==='disconnect'){connections=connections.filter(item=>item.session!==body.session);if(current.session===body.session)current=localState;result=state();}
+    else if(route==='rpc'&&body.params?.name==='open_structure_path'){
+      const filename=body.params.arguments.path;
+      result={content:[],structuredContent:{file:{name:path.basename(filename),path:filename,resourceUri:filename}}};
+    }
     else if(route==='rpc')result={content:[],structuredContent:{}};
     else throw Error('Unexpected API call: '+route);
     return {ok,json:async()=>structuredClone(result)};
@@ -92,22 +98,39 @@ const settle=()=>new Promise(resolve=>setImmediate(resolve));
   await context.window.atomLensOpenPaths([]);
   assert.equal(run('state.host'),'nd2','Cancelled native picker must leave the server active');
   await context.window.atomLensOpenPaths(['/tmp/water.xyz']);
-  assert.equal(run('state.host'),'本地 Mac');
+  assert.equal(run('currentConnection().host'),'本地 Mac');
   assert.equal(run('viewers.size'),3,'Local plus both remote views stay alive');
   await run("activate('nd2')");
   assert.equal(run('activeViewer()'),remoteView,'Returning to a server preserves its iframe and frame/camera state');
-  await run('useLocal()');
+  await run("activate('local')");
   await message('atomlens/language',{language:'zh-CN'});
   assert.equal(context.StructureI18n.language,'en','An inactive viewer cannot change the desktop language');
   await listeners.message({source:remoteView.frame.contentWindow,origin:context.location.origin,data:{jsonrpc:'2.0',id:99,method:'ping'}});
   assert.equal(calls.at(-1).body.session,'nd2','An inactive iframe must still route to its own worker');
   await run("activate('nd2')");
   await element('disconnect').onclick();
-  assert.equal(run('viewers.has("nd2")'),false);
+  assert.equal(run("[...viewers.values()].some(viewer=>viewer.session==='nd2')"),false);
   assert.equal(run('state.host'),'本地 Mac');
   await run("activate('nd3')");
   run('newProfile()');assert.equal(element('ssh-host').value,'');assert.equal(element('ssh-python').value,'python3');
   element('server-name').value='第三台';element('ssh-host').value='user@third';await element('server-save').onclick();
   assert.equal(profiles.length,3);assert.match(element('connection-status').textContent,/nd3/);
-  console.log('Desktop server list: independent profiles, explicit connect, failed-switch preservation and offline save passed.');
+  await run("openPaths(['/run/remote.xyz'],'nd3')");
+  const remote=run('activeViewer()');
+  await context.window.atomLensOpenPaths(['/tmp/before.xyz','/tmp/after.xyz']);
+  await element('separate-open').onclick();
+  const after=run('activeViewer()');
+  assert.equal(after.label,'after.xyz');
+  assert.equal(run('[...viewers.values()].filter(viewer=>viewer.label).length'),4);
+  element('compare-tab').value=remote.id;
+  element('split-side').onclick();
+  assert.deepEqual(Array.from(run('shown')),[after.id,remote.id]);
+  assert.equal(remote.visible,true);
+  assert.equal(calls.filter(call=>call.route==='rpc'&&call.body.params?.arguments?.path==='/run/remote.xyz').at(-1).body.session,'nd3');
+  element('split-swap').onclick();
+  assert.deepEqual(Array.from(run('shown')),[remote.id,after.id]);
+  run('closeViewer(activeViewer())');
+  assert.equal(run('activeViewer()'),remote);
+  assert.deepEqual(Array.from(run('shown')),[remote.id]);
+  console.log('Desktop: independent server connections, grouped file selection, separate tabs, cross-host comparison and closing a pane passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

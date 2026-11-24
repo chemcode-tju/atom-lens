@@ -59,18 +59,21 @@ console.log('Selection updates preserve the atom model and camera, including cle
  const element={hidden:false,focus(){},querySelector:selector=>selector==='.view-canvas'?canvas:selector==='.pointer-layer'?layer:title,
    addEventListener:(name,fn)=>{(handlers[name]??=[]).push(fn);},setPointerCapture:()=>{}};
  let resizeCallback;
+ let viewerCreations=0;
  const fakeViewer={setViewChangeCallback:()=>{},resize:()=>resizes.push([canvas.clientWidth,canvas.clientHeight]),render:()=>paints.push(1),translateScene:(dx,dy)=>translations.push([dx,dy])};
  global.document={createElement:tag=>tag==='section'?element:{},querySelector:()=>({label:'Front · XZ'})};
- global.$3Dmol={createViewer:()=>fakeViewer};
+ global.$3Dmol={createViewer:()=>{viewerCreations++;return fakeViewer;}};
  global.ResizeObserver=class {constructor(callback){resizeCallback=callback;}observe(){}};
  const interaction=Object.create(StructureViews.prototype);
  Object.assign(interaction,{container:{append:()=>{}},panes:[],activate:()=>{},fit:()=>{throw Error('Unexpected refit');}});
  interaction.createPane('xz',0);
+ assert.equal(viewerCreations,0,'Unshown viewports should not use a WebGL context');
  const emit=(name,properties)=>{const event={target:{closest:()=>null},preventDefault(){},stopImmediatePropagation(){this.stopped=true;},...properties};for(const handler of handlers[name]){handler(event);if(event.stopped)break;}};
  emit('pointerdown',{button:0,pointerId:1,clientX:10,clientY:20});
  emit('pointermove',{pointerId:1,clientX:30,clientY:40});assert.deepEqual(translations,[]);
  emit('pointerdown',{button:2,pointerId:2,clientX:10,clientY:20});
  emit('pointermove',{pointerId:2,clientX:30,clientY:15});assert.deepEqual(translations,[[20,-5]]);
+ assert.equal(viewerCreations,1);
  emit('pointerup',{pointerId:2});emit('pointermove',{pointerId:2,clientX:40,clientY:20});assert.equal(translations.length,1);
  resizeCallback();resizeCallback();resizeCallback();assert.equal(timers.size,1);assert.equal(resizes.length,0);settle();
  assert.deepEqual(resizes,[[400,600]]);assert.equal(paints.length,0);
@@ -180,4 +183,13 @@ for(const preset of ['xz','perspective']){
    StructureViews.prototype.resizePane(pane,w,h,`${w}:${h}:2`);
    assert.ok(Math.abs(focalLength(w,h)-initial)<1e-9);
  }
+ const comparison=Object.create(StructureViews.prototype);
+ comparison.comparison=true;
+ for(const [w,h] of [[325,800],[650,400]]){
+   comparison.resizePane(pane,w,h,`${w}:${h}:2`);
+   assert.ok(Math.abs(focalLength(w,h)-initial/2)<1e-9);
+ }
+ comparison.comparison=false;
+ comparison.resizePane(pane,650,800,'650:800:2');
+ assert.ok(Math.abs(focalLength(650,800)-initial)<1e-9);
 }

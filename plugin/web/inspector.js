@@ -58,8 +58,12 @@
     }
     open(visible){
       this.$('structure-inspector').hidden=!visible;
-      this.$('inspector-toggle').setAttribute('aria-expanded',String(visible));
-      if(visible)this.draw();else {clearTimeout(this.timer);this.timer=null;this.$('inspector-toggle').focus();}
+      const trigger=this.$('inspector-toggle');
+      for(const id of ['inspector-toggle','compact-inspector'])this.$(id).setAttribute('aria-expanded',String(visible));
+      if(visible)this.draw();else {
+        clearTimeout(this.timer);this.timer=null;
+        (trigger.getClientRects().length?trigger:this.$('more-tools')).focus();
+      }
       this.onResize();
     }
     clear(){this.frame=null;clearTimeout(this.timer);this.timer=null;this.$('inspector-content').replaceChildren();}

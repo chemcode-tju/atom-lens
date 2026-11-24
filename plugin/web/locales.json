@@ -527,5 +527,22 @@
   "本地 Mac 会话无需断开": "The local Mac session stays connected",
   "连接已关闭，请重新打开文件": "The connection closed. Reopen the file.",
   "请先选择 Mac 上的保存目录": "Choose a save folder on this Mac",
-  "导出传输中断": "Export transfer interrupted"
+  "导出传输中断": "Export transfer interrupted",
+  "结构标签页": "Structure tabs",
+  "打开新结构": "Open another structure",
+  "关闭标签页": "Close tab",
+  "分屏对比": "Compare structures",
+  "对比结构": "Compare with",
+  "左右并排": "Side by side",
+  "上下排列": "Stacked",
+  "交换位置": "Swap panes",
+  "退出分屏": "Close split view",
+  "调整分屏比例": "Resize split view",
+  "打开多个文件": "Open multiple files",
+  "作为一组打开时的主文件": "Primary file for grouped opening",
+  "作为一组打开": "Open as a group",
+  "分别打开标签页": "Open in separate tabs",
+  "打开时间轴": "Open timeline",
+  "更多底栏选项": "More toolbar options",
+  "始终使用单行底栏": "Always use a single-row toolbar"
 }

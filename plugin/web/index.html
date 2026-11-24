@@ -50,7 +50,7 @@
   <div id="viewports" class="viewports" data-layout="single" data-mode="rotate"><section id="atom-panel" hidden><strong id="atom-title"></strong><output id="measurement"></output><span id="atom-list"></span><button id="clear-selection" disabled>清除选择</button></section><button id="open-empty" type="button"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>打开结构文件</button></div>
 
   <section id="source-panel" hidden><div class="section-head"><strong id="source-title">当前帧源码</strong></div><p id="import-note"></p><textarea id="source" readonly spellcheck="false" aria-label="当前结构源码"></textarea></section>
-  <footer>
+  <footer id="viewer-footer">
     <section id="structure-inspector" hidden aria-label="结构信息">
       <div class="inspector-heading"><div role="tablist" aria-label="结构信息分类">
         <button id="particles-tab" role="tab" aria-selected="true" aria-controls="inspector-content" data-inspector-tab="particles">粒子</button>
@@ -65,16 +65,19 @@
       <div id="inspector-content" role="tabpanel" aria-labelledby="particles-tab" tabindex="0"></div>
       <p id="inspector-note"></p>
     </section>
-    <div class="bottom-toolbar">
+    <div class="bottom-toolbar" id="bottom-toolbar">
       <div id="trajectory-tools">
-        <div class="ruler"><div id="ticks" aria-hidden="true"></div><input id="timeline" type="range" min="0" max="0" value="0" aria-label="轨迹帧滑块" disabled></div>
+        <div id="timeline-panel">
+          <div class="ruler"><div id="ticks" aria-hidden="true"></div><input id="timeline" type="range" min="0" max="0" value="0" aria-label="轨迹帧滑块" disabled></div>
+          <div class="timeline-entry"><label class="frame-label" for="frame-number">帧号</label><input id="frame-number" type="number" min="1" value="1" aria-label="帧号"></div>
+        </div>
         <div class="transport"><div class="playback" role="group" aria-label="轨迹播放"><button type="button" id="first" aria-label="第一帧" title="第一帧"><svg class="icon" aria-hidden="true"><use href="#i-first"/></svg></button>
           <button type="button" id="previous" aria-label="上一帧" title="上一帧"><svg class="icon" aria-hidden="true"><use href="#i-previous"/></svg></button>
           <button type="button" id="play" aria-label="播放轨迹" title="播放轨迹"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg></button>
           <button type="button" id="next" aria-label="下一帧" title="下一帧"><svg class="icon" aria-hidden="true"><use href="#i-next"/></svg></button>
           <button type="button" id="last" aria-label="最后一帧" title="最后一帧"><svg class="icon" aria-hidden="true"><use href="#i-last"/></svg></button>
 </div>
-          <div class="frame-tools"><div class="frame-label"><input id="frame-number" type="number" min="1" value="1" aria-label="帧号"><span aria-hidden="true">/</span><span id="frame-total">—</span></div><details id="playback-menu" class="bottom-menu"><summary id="playback-settings" role="button" title="播放设置" aria-label="播放设置"><svg class="icon" aria-hidden="true"><use href="#i-speed"/></svg></summary>
+          <div class="frame-tools"><button type="button" id="frame-toggle" title="打开时间轴" aria-label="打开时间轴" aria-describedby="frame-current frame-total" aria-expanded="false" aria-controls="timeline-panel"><span id="frame-current">1</span><span aria-hidden="true">/</span><span id="frame-total">—</span><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></button><details id="playback-menu" class="bottom-menu"><summary id="playback-settings" role="button" title="播放设置" aria-label="播放设置"><svg class="icon" aria-hidden="true"><use href="#i-speed"/></svg></summary>
         <section id="playback-dialog" class="tool-card"><h2>播放设置</h2>
           <label class="card-field">每秒帧数 <input id="animation-fps" type="number" min="1" max="120" step="1" value="60"></label>
           <label class="card-field">播放速度 <select id="playback-speed"><option value="0.25">× 0.25</option><option value="0.5">× 0.5</option><option value="1" selected>× 1</option><option value="2">× 2</option><option value="5">× 5</option><option value="10">× 10</option><option value="20">× 20</option></select></label>
@@ -90,7 +93,7 @@
           <button type="button" id="box" data-mode-button="box" aria-pressed="false" aria-label="框选原子" title="框选原子"><svg class="icon" aria-hidden="true"><use href="#i-box"/></svg></button>
           <button type="button" id="reset" aria-label="适应视图" title="适应视图"><svg class="icon" aria-hidden="true"><use href="#i-fit"/></svg></button>
 </div>
-        <div class="view-rail"><details id="viewport-menu" class="bottom-menu"><summary role="button" title="视图" aria-label="视图"><svg class="icon" aria-hidden="true"><use href="#i-multi-view"/></svg></summary>
+        <div class="view-rail"><details id="viewport-menu" class="bottom-menu"><summary id="more-tools" role="button" title="更多底栏选项" aria-label="更多底栏选项"><svg class="icon" aria-hidden="true"><use href="#i-more"/></svg></summary>
           <section class="tool-card"><h2>视图</h2><div id="view-control-fields"><span class="orientation-control"><select id="orientation" aria-label="视图方向">
             <option value="xy" data-shortcut="Z" aria-label="Top · XY (+Z)">Top · XY</option>
             <option value="bottom" data-shortcut="⌥Z" aria-label="Bottom · XY (−Z)">Bottom · XY</option>
@@ -102,6 +105,11 @@
           </select><kbd id="orientation-key" class="view-shortcut" aria-hidden="true">⌥Y</kbd></span><select id="layout" aria-label="视图布局"><option value="single">单视图</option><option value="dual">双视图</option><option value="quad">四视图</option></select></div>
             <label class="card-field">鼠标操作 <select id="navigation-mode"><option value="rotate">旋转</option><option value="pan">平移</option><option value="zoom">缩放</option><option value="select">选择原子</option><option value="box">框选原子</option></select></label>
             <div class="card-actions"><button id="view-reset">适应视图</button><button type="button" id="expand" aria-label="展开 / 恢复多视图" title="展开 / 恢复多视图"><svg class="icon" aria-hidden="true"><use href="#i-expand"/></svg><span>展开 / 恢复多视图</span></button></div>
+            <div class="card-actions compact-actions">
+              <button type="button" id="compact-playback" data-close-menu>播放设置</button>
+              <button type="button" id="compact-inspector" aria-expanded="false" aria-controls="structure-inspector" data-close-menu>结构信息</button>
+            </div>
+            <label class="check-row"><input id="compact-footer" type="checkbox">始终使用单行底栏</label>
           </section></details>
           <button id="inspector-toggle" title="结构信息" aria-label="结构信息" aria-expanded="false" aria-controls="structure-inspector"><svg class="icon" aria-hidden="true"><use href="#i-table"/></svg></button>
         </div>

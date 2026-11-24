@@ -24,7 +24,7 @@ function labelScreenScale(diameter, fontSize, textWidth) {
   return Math.min(1,0.85*diameter/Math.max(fontSize,textWidth));
 }
 class StructureViews {
-  constructor(container, onAtom, onBox) {
+  constructor(container, onAtom, onBox, comparison = false) {
     this.container = container;
     this.onAtom = onAtom; this.onBox = onBox;
     this.panes = [];
@@ -32,6 +32,7 @@ class StructureViews {
     this.layout = "single";
     this.previousLayout = "quad";
     this.mode = "rotate";
+    this.comparison = comparison;
     ["xy", "xz", "yz", "perspective"].forEach((preset, index) => this.createPane(preset, index));
     this.setLayout("single");
   }
@@ -42,8 +43,15 @@ class StructureViews {
     element.innerHTML = '<button class="view-title" type="button"></button><div class="view-canvas"></div><div class="pointer-layer"><div class="selection-rectangle" hidden></div></div><div class="selection-rectangle shortcut-rectangle" hidden></div><svg class="axis-gizmo" viewBox="0 0 78 78" aria-label="坐标轴"></svg>';
     this.container.append(element);
     const canvas = element.querySelector(".view-canvas");
-    const viewer = $3Dmol.createViewer(canvas, {canvas: document.createElement("canvas"), row:0, col:0, rows:1, cols:1, backgroundColor: "#ffffff", antialias: true, orthographic: true, disableFog: true, manualResize: true});
-    const pane = {element, canvas, viewer, preset, ready: false};
+    let renderer;
+    const createRenderer = () => {
+      const viewer = $3Dmol.createViewer(canvas, {canvas: document.createElement("canvas"), row:0, col:0, rows:1, cols:1, backgroundColor: "#ffffff", antialias: true, orthographic: true, disableFog: true, manualResize: true});
+      viewer.setViewChangeCallback(() => { this.drawAxes(pane); this.drawSelection(pane); });
+      return viewer;
+    };
+    const pane = {element, canvas, preset, ready: false, get viewer() {
+      return renderer ??= createRenderer();
+    }};
     this.panes.push(pane);
     element.querySelector(".view-title").textContent = this.title(preset);
     element.querySelector(".view-title").onclick = () => this.activate(index);
@@ -53,7 +61,6 @@ class StructureViews {
       this.commitResize(pane); this.activate(index);
     }, true);
     element.addEventListener("mousedown", () => this.activate(index), true);
-    viewer.setViewChangeCallback(() => { this.drawAxes(pane); this.drawSelection(pane); });
     // Own resize scheduling; the pinned renderer's automatic listeners are
     // disabled with manualResize. resize() already paints the existing scene.
     new ResizeObserver(() => this.scheduleResize(pane)).observe(canvas);
@@ -68,7 +75,7 @@ class StructureViews {
     },true);
     element.addEventListener('pointermove',event=>{
       if(!rightPointer||event.pointerId!==rightPointer.id)return;
-      viewer.translateScene(event.clientX-rightPointer.x,event.clientY-rightPointer.y);
+      pane.viewer.translateScene(event.clientX-rightPointer.x,event.clientY-rightPointer.y);
       rightPointer.x=event.clientX;rightPointer.y=event.clientY;event.stopImmediatePropagation();
     },true);
     for(const name of ['pointerup','pointercancel'])element.addEventListener(name,event=>{
@@ -89,20 +96,20 @@ class StructureViews {
       if(pointer.mode==='box') {
         const rect=layer.getBoundingClientRect(),box=layer.querySelector('.selection-rectangle');
         box.style.cssText=`left:${Math.min(pointer.startX,event.clientX)-rect.left}px;top:${Math.min(pointer.startY,event.clientY)-rect.top}px;width:${Math.abs(event.clientX-pointer.startX)}px;height:${Math.abs(event.clientY-pointer.startY)}px`;
-      } else if (this.mode === "pan") viewer.translateScene(dx, dy);
-      else viewer.zoom(Math.exp(-dy * 0.012));
+      } else if (this.mode === "pan") pane.viewer.translateScene(dx, dy);
+      else pane.viewer.zoom(Math.exp(-dy * 0.012));
       pointer.x = event.clientX; pointer.y = event.clientY;
     };
     layer.onpointerup = event => {
       if(pointer?.id===event.pointerId&&pointer.mode==='box'&&pointer.dragged) {
         const atoms=this.latest?.[0].atoms||[];
-        const points=this.visibleIndices.map(index=>({...viewer.modelToScreen(atoms[index]),index}));
+        const points=this.visibleIndices.map(index=>({...pane.viewer.modelToScreen(atoms[index]),index}));
         this.onBox(StructureSelection.inRectangle(points,{x:pointer.startX+scrollX,y:pointer.startY+scrollY},{x:event.clientX+scrollX,y:event.clientY+scrollY}),event.shiftKey);
       }
       layer.querySelector('.selection-rectangle').hidden=true;pointer=null;
     };
     layer.onpointercancel=layer.onlostpointercapture=()=>{layer.querySelector('.selection-rectangle').hidden=true;pointer=null;};
-    layer.addEventListener("wheel", event => { event.preventDefault(); viewer.zoom(Math.exp(-event.deltaY * 0.001)); }, {passive: false});
+    layer.addEventListener("wheel", event => { event.preventDefault(); pane.viewer.zoom(Math.exp(-event.deltaY * 0.001)); }, {passive: false});
   }
   scheduleResize(pane) {
     const width=pane.canvas.clientWidth,height=pane.canvas.clientHeight;
@@ -153,22 +160,30 @@ class StructureViews {
       pane.resizeCover?.remove();pane.resizeCover=null;
     }
   }
+  setComparison(comparison) {
+    if(this.comparison===comparison)return;
+    this.comparison=comparison;
+    for(const pane of this.panes)pane.lastSize=null;
+    this.resizeToLayout();
+  }
   resizePane(pane,width,height,size) {
     if(pane.lastSize===size)return;
     if(pane.projectionSize){
-      // 3Dmol fixes horizontal span in orthographic mode and vertical FOV in
-      // perspective. Keep the focal length in CSS pixels for either projection.
+      // Keep the same camera, scaling its framing to fit a smaller comparison pane.
       const perspective=pane.preset==='perspective';
-      const ratio=perspective?height/pane.projectionSize.height:width/pane.projectionSize.width;
+      const widthRatio=width/pane.projectionSize.width,heightRatio=height/pane.projectionSize.height;
+      const scale=this.comparison?Math.min(1,widthRatio,heightRatio):1;
+      const ratio=(perspective?heightRatio:widthRatio)/scale;
       const halfAngle=perspective?10:20;
       const angle=Math.atan(Math.tan(halfAngle*Math.PI/180)*ratio)*180/Math.PI;
       pane.viewer.setCameraParameters({fov:perspective?2*angle:angle});
     }
     pane.viewer.resize();
     pane.lastSize=size;
+    if(pane.pendingFit)this.fit(pane);
   }
   bindShiftSelection(pane) {
-    const {element,canvas,viewer}=pane;
+    const {element,canvas}=pane;
     const rectangle=element.querySelector('.shortcut-rectangle');
     let gesture=null;
     const stop=event=>{event.preventDefault();event.stopImmediatePropagation();};
@@ -192,6 +207,7 @@ class StructureViews {
       if(!gesture||gesture.id!==event.pointerId)return;
       stop(event);
       const current=gesture;finish();
+      const viewer=pane.viewer;
       if(current.dragged){
         const atoms=this.latest?.[0].atoms||[];
         const points=this.visibleIndices.map(index=>({...viewer.modelToScreen(atoms[index]),index}));
@@ -263,7 +279,8 @@ class StructureViews {
   fit(pane = this.panes[this.active]) {
     if (!pane.ready || pane.element.hidden || !this.bounds) return;
     const width=pane.canvas.clientWidth,height=pane.canvas.clientHeight;
-    if(!width||!height)return;
+    if(!width||!height){pane.pendingFit=true;return;}
+    pane.pendingFit=false;
     pane.projectionSize={width,height};
     pane.viewer.setCameraParameters({fov:20});
     this.resizePane(pane,width,height,`${width}:${height}:${globalThis.devicePixelRatio||1}`);

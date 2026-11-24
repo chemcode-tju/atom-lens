@@ -20,7 +20,7 @@ python3 packaging/build_macos.py
 python3 packaging/verify_macos.py
 ```
 
-构建器只生成本地预览，不上传 GitHub。输出位于 `dist/macos-arm64/`，包括应用、DMG 和 SHA256 校验文件；当前为 `preview-12`，表示预览包修订号。图标修改时需要本机 Inkscape；图标源图、暗色版本和小尺寸加重版本由同一脚本生成，16/32 pt ICNS 图层采用加重版本。`dist/` 已忽略，不应把运行环境二进制提交到源码仓库。
+构建器只生成本地预览，不上传 GitHub。输出位于 `dist/macos-arm64/`，包括应用、DMG 和 SHA256 校验文件；当前为 `preview-14`，表示预览包修订号。图标修改时需要本机 Inkscape；图标源图、暗色版本和小尺寸加重版本由同一脚本生成，16/32 pt ICNS 图层采用加重版本。`dist/` 已忽略，不应把运行环境二进制提交到源码仓库。
 
 Python 采用 Astral 的 python-build-standalone 官方发布包，固定版本、下载 URL 和 SHA256，校验后才解包。运行时、动态库和原有许可证一并保留。构建器在本机预编译安装界面与保存助手，因此用户安装时无需编译。
 

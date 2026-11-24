@@ -108,9 +108,14 @@ NSString *AtomLensText(NSString *zh, NSString *en) {
     NSString *payload = [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding];
     [self.web evaluateJavaScript:[NSString stringWithFormat:@"window.atomLensNativeResult(...%@)", payload] completionHandler:nil];
 }
-- (void)openPanel:(void (^)(NSArray<NSString *> *))completion {
+- (void)openPanelAt:(NSString *)directory completion:(void (^)(NSArray<NSString *> *))completion {
     NSOpenPanel *panel = [NSOpenPanel openPanel]; panel.canChooseDirectories = YES;
     panel.allowsMultipleSelection = YES; panel.prompt = AtomLensText(@"打开", @"Open");
+    BOOL isDirectory = NO;
+    if ([directory isKindOfClass:NSString.class] && directory.isAbsolutePath &&
+        [NSFileManager.defaultManager fileExistsAtPath:directory isDirectory:&isDirectory] && isDirectory) {
+        panel.directoryURL = [NSURL fileURLWithPath:directory isDirectory:YES];
+    }
     [panel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse response) {
         NSMutableArray *paths = [NSMutableArray new];
         if (response == NSModalResponseOK) for (NSURL *url in panel.URLs) [paths addObject:url.path];
@@ -123,7 +128,9 @@ NSString *AtomLensText(NSString *zh, NSString *en) {
     NSString *json = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:paths options:0 error:nil] encoding:NSUTF8StringEncoding];
     [self.web evaluateJavaScript:[NSString stringWithFormat:@"window.atomLensOpenPaths(%@)", json] completionHandler:nil];
 }
-- (void)openDocument:(id)sender { [self openPanel:^(NSArray *paths) { [self deliverFiles:paths]; }]; }
+- (void)openDocument:(id)sender {
+    if (self.ready) [self.web evaluateJavaScript:@"window.atomLensOpenLocal?.()" completionHandler:nil];
+}
 - (void)showInstaller:(id)sender { ShowAtomLensInstaller(); }
 - (void)showServers:(id)sender { [self.web evaluateJavaScript:@"window.atomLensShowServers?.()" completionHandler:nil]; }
 - (void)application:(NSApplication *)application openFiles:(NSArray<NSString *> *)filenames {
@@ -152,7 +159,7 @@ NSString *AtomLensText(NSString *zh, NSString *en) {
         self.window.backgroundColor = [dark boolValue] ? [NSColor colorWithSRGBRed:21.0/255 green:21.0/255 blue:23.0/255 alpha:1.0] : NSColor.whiteColor;
     }
     else if ([action isEqualToString:@"openFiles"]) {
-        [self openPanel:^(NSArray *paths) { [self respond:identifier value:@{@"paths":paths}]; }];
+        [self openPanelAt:message.body[@"directory"] completion:^(NSArray *paths) { [self respond:identifier value:@{@"paths":paths}]; }];
     } else if ([action isEqualToString:@"chooseDirectory"]) {
         NSOpenPanel *panel = [NSOpenPanel openPanel]; panel.canChooseFiles = NO; panel.canChooseDirectories = YES;
         panel.canCreateDirectories = YES; panel.prompt = AtomLensText(@"保存到此目录", @"Save Here");
