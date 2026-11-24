@@ -17,6 +17,7 @@ import shlex
 import stat
 import tempfile
 
+from file_snapshot import binary_read_flags
 from path_access import StructurePaths
 
 
@@ -30,7 +31,7 @@ def safe_path(path: Path) -> Path:
 def prefix(path: Path, limit: int = header_limit) -> str:
     """Never read a trajectory in full, follow a pipe, or enter archive."""
     path = safe_path(path)
-    descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    descriptor = os.open(path, binary_read_flags)
     with os.fdopen(descriptor, "rb") as stream:
         before = os.fstat(stream.fileno())
         if not stat.S_ISREG(before.st_mode):

@@ -4,23 +4,23 @@ from __future__ import annotations
 # Configuration
 maximum_profiles = 100
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from contextlib import contextmanager
 from collections.abc import Iterator
-import fcntl
 import json
 import os
 import re
+import sys
 import tempfile
 import uuid
 
 
-def valid_directory(value: object) -> bool:
-    return (
-        isinstance(value, str) and len(value) <= 4096 and value.startswith("/")
-        and "\0" not in value and "archive" not in Path(value).parts
-    )
+def valid_directory(value: object, *, remote: bool = False) -> bool:
+    if not isinstance(value, str) or not value or len(value) > 4096 or "\0" in value:
+        return False
+    path = PurePosixPath(value) if remote else Path(value)
+    return path.is_absolute() and "archive" not in path.parts
 
 
 def normalize_profile(profile: dict[str, Any]) -> dict[str, Any]:
@@ -51,9 +51,22 @@ def normalize_profile(profile: dict[str, Any]) -> dict[str, Any]:
 
 class ProfileStore:
     def __init__(self, path: Path | None = None) -> None:
-        self.path = path if path is not None else Path.home() / "Library/Application Support/Atom Lens/servers.json"
+        if path is None:
+            if sys.platform == "win32":
+                base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData/Local")
+            else:
+                base = Path.home() / "Library/Application Support"
+            path = base / "Atom Lens/servers.json"
+        self.path = path
 
     def read(self) -> dict[str, Any]:
+        if sys.platform == "win32":
+            # Windows readers can prevent the atomic replacement while the file is open.
+            with self.locked():
+                return self.read_unlocked()
+        return self.read_unlocked()
+
+    def read_unlocked(self) -> dict[str, Any]:
         if self.path.is_symlink():
             raise ValueError("服务器配置文件不能是符号链接")
         if not self.path.exists():
@@ -71,7 +84,7 @@ class ProfileStore:
                 profile = {"id": str(uuid.UUID(item["id"])), **normalize_profile(item)}
                 if type(item.get("codexInstalled")) is bool:
                     profile["codexInstalled"] = item["codexInstalled"]
-                if valid_directory(item.get("lastDirectory")):
+                if valid_directory(item.get("lastDirectory"), remote=True):
                     profile["lastDirectory"] = item["lastDirectory"]
                 profiles.append(profile)
             if len({item["id"] for item in profiles}) != len(profiles):
@@ -105,10 +118,10 @@ class ProfileStore:
         return self.location_record(self.read(), profile).get("lastDirectory")
 
     def remember_directory(self, profile: dict[str, Any] | None, directory: str) -> None:
-        if not valid_directory(directory):
+        if not valid_directory(directory, remote=profile is not None):
             return
         with self.locked():
-            data = self.read()
+            data = self.read_unlocked()
             record = self.location_record(data, profile)
             if record and record.get("lastDirectory") != directory:
                 record["lastDirectory"] = directory
@@ -119,8 +132,16 @@ class ProfileStore:
         """Serialize read-modify-write across app instances, with an atomic JSON swap."""
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         descriptor = os.open(self.path.with_suffix(".lock"), os.O_CREAT | os.O_RDWR, 0o600)
-        with os.fdopen(descriptor, "a") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+        with os.fdopen(descriptor, "r+b", buffering=0) as lock:
+            if sys.platform == "win32":
+                import msvcrt
+
+                # A Windows byte-range lock may extend beyond the end of the lock file.
+                msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(lock, fcntl.LOCK_EX)
             yield
 
     def write(self, data: dict[str, Any]) -> None:
@@ -141,7 +162,7 @@ class ProfileStore:
         normalized = normalize_profile(profile)
         identifier = profile.get("id")
         with self.locked():
-            data = self.read()
+            data = self.read_unlocked()
             profiles = data["profiles"]
             if identifier:
                 previous = next((item for item in profiles if item["id"] == identifier), None)
@@ -168,7 +189,7 @@ class ProfileStore:
 
     def remove(self, identifier: str) -> None:
         with self.locked():
-            data = self.read()
+            data = self.read_unlocked()
             profiles = data["profiles"]
             remaining = [item for item in profiles if item["id"] != identifier]
             if len(remaining) == len(profiles):
@@ -183,7 +204,7 @@ class ProfileStore:
         if not identifier:
             return
         with self.locked():
-            data = self.read()
+            data = self.read_unlocked()
             saved = next((item for item in data["profiles"] if item["id"] == identifier), None)
             if not saved or any(saved[key] != profile[key] for key in ("host", "config", "python")):
                 return
@@ -201,7 +222,7 @@ class ProfileStore:
         if not identifier:
             return
         with self.locked():
-            data = self.read()
+            data = self.read_unlocked()
             if data["lastConnected"] == identifier:
                 data["lastConnected"] = None
                 self.write(data)

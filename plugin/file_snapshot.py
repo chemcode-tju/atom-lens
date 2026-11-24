@@ -17,6 +17,8 @@ import stat
 import sys
 import threading
 
+binary_read_flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
+
 
 def content_stamp(info: Any) -> tuple[int, int]:
     """Ignore macOS ctime-only access grants; block hashes still verify content.
@@ -118,7 +120,7 @@ def is_snapshot(version: str | None) -> bool:
 def open_snapshot(path: Path, version: str | None = None) -> Iterator[tuple[BinaryIO, FileSnapshot]]:
     """Open a stable prefix, with an opaque session token bound to its path."""
     path = path.resolve()
-    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NONBLOCK), "rb") as physical:
+    with os.fdopen(os.open(path, binary_read_flags), "rb") as physical:
         info = os.fstat(physical.fileno())
         if not stat.S_ISREG(info.st_mode):
             raise ValueError("只能读取普通结构文件。")

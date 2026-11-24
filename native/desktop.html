@@ -81,7 +81,7 @@
 </div>
 <div id="panes"><div id="divider" role="separator" aria-label="调整分屏比例" tabindex="0" aria-valuemin="20" aria-valuemax="80" hidden></div></div>
 <dialog id="server-dialog" aria-labelledby="server-title">
-<div class="server-heading"><h2 id="server-title">连接服务器</h2><p id="connection-status">当前查看：本地 Mac</p></div>
+<div class="server-heading"><h2 id="server-title">连接服务器</h2><p id="connection-status"></p></div>
 <div class="server-grid">
 <div class="server-directory"><label for="server-list">服务器</label>
 <select id="server-list" size="8"><option value="" disabled selected>选择服务器…</option></select>
@@ -124,15 +124,22 @@ let localCodex=null;
 let directoryPage,directoryGeneration=0,browserSession,selected=new Set(),openCandidates;
 let savedProfiles=[],sshHosts=[],selectedProfileId=null,serverSelection='',hostRequest=0,serverListKey='';
 const nativeCalls=new Map();
+const windowsBridge=window.atomLensDesktop,macBridge=window.webkit?.messageHandlers?.atomLens;
+const localLabel=windowsBridge?'本地 Windows':'本地 Mac';
 async function api(route,body={}){
  const response=await fetch(new URL(route,location.href),{method:'POST',headers:{'Content-Type':'application/json','X-Atom-Lens':'desktop'},body:JSON.stringify(body)});
  const result=await response.json();if(!response.ok)throw Error(result.error||'请求失败');return result;
 }
 function native(action,params={}){
+ if(windowsBridge)return windowsBridge.invoke(action,params);
  return new Promise((resolve,reject)=>{
-  if(!window.webkit?.messageHandlers?.atomLens){reject(Error('此操作需要在 Atom Lens Mac App 中使用'));return;}
-  const id=++nextNative;nativeCalls.set(id,{resolve,reject});window.webkit.messageHandlers.atomLens.postMessage({action,id,...params});
+  if(!macBridge){reject(Error('此操作需要在 Atom Lens Mac App 中使用'));return;}
+  const id=++nextNative;nativeCalls.set(id,{resolve,reject});macBridge.postMessage({action,id,...params});
  });
+}
+function notifyNative(action,params={}){
+ if(windowsBridge)native(action,params).catch(showError);
+ else macBridge?.postMessage({action,...params});
 }
 window.atomLensNativeResult=(id,result)=>{const call=nativeCalls.get(id);if(!call)return;nativeCalls.delete(id);result.error?call.reject(Error(result.error)):call.resolve(result);};
 function activeViewer(){return viewers.get(activeTab);}
@@ -144,13 +151,14 @@ function showError(error){$('notice').textContent=error.message||String(error);}
 function translated(text){return StructureI18n.translate(text,StructureI18n.language);}
 function dataOption(label,value){const option=new Option(label,value);option.setAttribute('data-no-i18n','');return option;}
 function connectionLabel(connection=currentConnection()){
- return connection.remote&&connection.profile?.name!==connection.host?`${connection.profile?.name||connection.host} (${connection.host})`:connection.host;
+ if(!connection.remote)return translated(localLabel);
+ return connection.profile?.name!==connection.host?`${connection.profile?.name||connection.host} (${connection.host})`:connection.host;
 }
 function syncViewerTools(context){
  const controls=context.controls;
  if(!controls)return;
  const connection=connectionFor(context.session);
- controls.host.replaceChildren(...state.connections.map(item=>dataOption(item.remote?item.profile?.name||item.host:translated('本地 Mac'),item.session)));
+ controls.host.replaceChildren(...state.connections.map(item=>dataOption(item.remote?item.profile?.name||item.host:translated(localLabel),item.session)));
  controls.host.value=context.session;controls.host.disabled=state.connections.length<2;controls.host.title=connectionLabel(connection);
  controls.browse.hidden=!connection.remote;
  controls.codexStatus.textContent=localCodex===true?'已安装':localCodex===false?'未安装':'';
@@ -165,12 +173,29 @@ function installViewerTools(context){
  const get=id=>document.getElementById(id);
  const tools=get('desktop-tools'),host=get('desktop-host'),browse=get('browse'),empty=get('open-empty');
  context.controls={host,browse,codexStatus:get('codex-status')};
- get('local-open').onclick=get('open-file').onclick=openLocal;
+ get('local-open').onclick=get('open-file').onclick=()=>openLocal();
  empty.onclick=()=>openPicker(context.session);
  browse.onclick=()=>showBrowser(context.session);
  get('servers').onclick=()=>{focusViewer(context);window.atomLensShowServers();};
- get('codex').onclick=()=>native('installCodex').catch(showError);
- get('workspace-menu').addEventListener('toggle',event=>{if(event.target.open)refreshCodex();});
+ if(windowsBridge){
+  const folder=document.createElement('button');
+  folder.textContent='打开本地目录…';folder.setAttribute('data-close-menu','');
+  folder.onclick=()=>openLocal('openFolder');get('local-open').after(folder);
+  get('codex').hidden=true;
+  for(const id of ['snapshot-destination','animation-destination'])get(id).options[0].textContent=localLabel;
+  for(const option of get('orientation').options)if(option.dataset.shortcut?.startsWith('⌥'))option.dataset.shortcut=option.dataset.shortcut.replace('⌥','Alt+');
+  get('orientation-key').textContent=get('orientation').selectedOptions[0].dataset.shortcut||'';
+  document.addEventListener('drop',event=>{
+   const files=Array.from(event.dataTransfer?.files||[]);
+   const paths=files.map(file=>windowsBridge.pathForFile(file));
+   if(!paths.length||!paths.every(Boolean))return;
+   event.preventDefault();event.stopImmediatePropagation();
+   void window.atomLensOpenPaths(paths);
+  },true);
+ }else{
+  get('codex').onclick=()=>native('installCodex').catch(showError);
+  get('workspace-menu').addEventListener('toggle',event=>{if(event.target.open)refreshCodex();});
+ }
  host.onchange=()=>activate(host.value).catch(error=>{updateHost();showError(error);});
  document.addEventListener('pointerdown',()=>{if(shown.includes(context.id)){focusViewer(context);$('tab-layout').open=false;}});
  document.addEventListener('focusin',()=>{if(shown.includes(context.id))focusViewer(context);});
@@ -272,7 +297,7 @@ function renderTabs(){
 }
 function tabHost(context){
  const connection=connectionFor(context.session);
- return connection.remote?connectionLabel(connection):translated('本地 Mac');
+ return connectionLabel(connection);
 }
 function tabTitle(context){return `${context.path||context.label} · ${tabHost(context)}`;}
 function compare(layout){
@@ -335,7 +360,7 @@ async function openFile(path,companions,session){
  if(!file&&!choices?.length)throw Error('未返回结构文件');
  if(!connectionFor(session))return result;
  const displayPath=file?.path||directory||path;
- addStructure(session,file?.name||displayPath.split('/').filter(Boolean).at(-1)||displayPath,displayPath,'ui/notifications/tool-result',result);
+ addStructure(session,file?.name||displayPath.split(/[\\/]/).filter(Boolean).at(-1)||displayPath,displayPath,'ui/notifications/tool-result',result);
  $('notice').textContent='';
  return result;
 }
@@ -369,7 +394,7 @@ window.addEventListener('message',async event=>{
   StructureI18n.setLanguage(language);
   updateHost();
   for(const viewer of viewers.values())if(viewer.ready)notify('atomlens/language',{language},viewer);
-  window.webkit?.messageHandlers?.atomLens?.postMessage({action:'setLanguage',language});
+  notifyNative('setLanguage',{language});
   return;
  }
  if(message.id===undefined)return;
@@ -391,10 +416,10 @@ window.addEventListener('message',async event=>{
  }catch(error){response={jsonrpc:'2.0',id:message.id,error:{code:-32000,message:error.message}};}
  if(viewers.has(context.id))source.postMessage(response,location.origin);
 });
-async function openLocal(){
+async function openLocal(action='openFiles'){
  try{
   const {directory}=await api('location',{session:localSession()});
-  const result=await native('openFiles',{directory});await window.atomLensOpenPaths(result.paths);
+  const result=await native(action,{directory});await window.atomLensOpenPaths(result.paths);
  }catch(error){showError(error);}
 }
 window.atomLensOpenLocal=openLocal;
@@ -591,14 +616,14 @@ $('separate-open').onclick=async()=>{
  }
  if(errors.length)showError(Error(errors.join('\n')));
 };
-const nativeLanguage=window.webkit?.messageHandlers?.atomLens
+const nativeLanguage=(macBridge||windowsBridge)
  ? native('readLanguage').then(result=>StructureI18n.setLanguage(result.language)).catch(()=>{}) : Promise.resolve();
-function reportAppearance({mode,dark}){window.webkit?.messageHandlers?.atomLens?.postMessage({action:'setAppearance',mode,dark});}
+function reportAppearance({mode,dark}){notifyNative('setAppearance',{mode,dark});}
 document.addEventListener('atomlens-theme-change',event=>reportAppearance(event.detail));
 if(typeof chemistryTheme!=='undefined')reportAppearance({mode:chemistryTheme.read().mode,dark:document.documentElement.dataset.theme==='dark'});
 Promise.all([api('startup'),nativeLanguage]).then(([{startupError,...result}])=>{
- state=result;resetViewer();refreshCodex();
+ state=result;resetViewer();if(!windowsBridge)refreshCodex();
  $('notice').textContent=startupError?`无法重连上次的服务器：${startupError}`:'';
- window.webkit?.messageHandlers?.atomLens?.postMessage({action:'ready'});
+ notifyNative('ready');
 }).catch(showError);
 </script></body></html>

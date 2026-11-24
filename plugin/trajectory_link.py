@@ -55,11 +55,11 @@ def create_link(path: str, companions: list[str]) -> dict[str, str]:
     digest = hashlib.sha256(content).hexdigest()[:12]
     target = directory / f"view-{digest}.svtraj"
     # Publish a complete file atomically without replacing any existing entry.
-    with tempfile.NamedTemporaryFile(dir=directory) as temp:
-        temp.write(content)
-        temp.flush()
+    with tempfile.TemporaryDirectory(dir=directory) as temporary:
+        staged = Path(temporary) / target.name
+        staged.write_bytes(content)
         try:
-            os.link(temp.name, target)
+            os.link(staged, target)
         except FileExistsError:
             if target.is_symlink() or not target.is_file() or target.stat().st_size != len(content) or target.read_bytes() != content:
                 raise ValueError(f"同名文件已存在：{target}")

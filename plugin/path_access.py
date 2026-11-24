@@ -12,6 +12,7 @@ import secrets
 import socket
 import stat
 
+from file_snapshot import binary_read_flags
 from trajectory import file_version
 
 
@@ -59,7 +60,7 @@ class StructurePaths:
         if not isinstance(token, str) or token not in self.files:
             raise ValueError("结构文件会话已失效，请重新按路径打开。")
         path = self.files[token]
-        descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        descriptor = os.open(path, binary_read_flags)
         with os.fdopen(descriptor, "rb") as stream:
             info = os.fstat(stream.fileno())
             if not stat.S_ISREG(info.st_mode):

@@ -79,7 +79,7 @@ class DesktopHost(ThreadingHTTPServer):
             return
         directory = selection.get("directory")
         if not directory and (path := (selection.get("file") or {}).get("path")):
-            directory = str(PurePosixPath(path).parent)
+            directory = str((PurePosixPath(path) if connection["remote"] else Path(path)).parent)
         if directory:
             try:
                 self.profiles.remember_directory(connection["profile"], directory)

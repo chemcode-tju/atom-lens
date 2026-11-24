@@ -489,7 +489,7 @@ function syncSnapshotButton() {
   if(snapshotSaving)button.textContent='正在保存…';
   else if(!snapshotHost)button.textContent='保存快照';
   else if(!snapshotData&&!$("snapshot-result").textContent)button.textContent='正在生成预览…';
-  else button.textContent=$("snapshot-destination").value==='server'?'保存到服务器':'保存到 Mac…';
+  else button.textContent=$("snapshot-destination").value==='server'?'保存到服务器':snapshotHost.desktopPicker?'保存到本机…':'保存到 Mac…';
 }
 function refreshSnapshot() {
   const ticket=++snapshotTicket;
@@ -519,9 +519,10 @@ $("snapshot").onclick=async()=>{
     if(response.isError||!response.structuredContent)throw Error('无法读取保存位置，请重新打开查看器');
     snapshotHost=response.structuredContent;
     const serverOption=$("snapshot-destination").querySelector('[value="server"]');
-    serverOption.hidden=snapshotHost.nativePicker||pickedFile;
+    const local=snapshotHost.nativePicker||snapshotHost.desktopLocal||pickedFile;
+    serverOption.hidden=local;
     serverOption.textContent='服务器 · '+snapshotHost.host;
-    $("snapshot-destination").value=(!snapshotHost.nativePicker&&!pickedFile)?'server':'local';
+    $("snapshot-destination").value=local?'local':'server';
     $("snapshot-directory").value=pickedFile?'':snapshotHost.directory;
     $("snapshot-controls").disabled=false;updateSnapshotDestination();refreshSnapshot();
   }catch(error){if(ticket===snapshotTicket)$("snapshot-result").textContent=error.message;}

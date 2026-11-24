@@ -13,7 +13,7 @@ from itertools import islice
 from typing import Any, BinaryIO
 
 from trajectory import file_version
-from file_snapshot import IncompleteFrame, is_snapshot, open_snapshot
+from file_snapshot import IncompleteFrame, binary_read_flags, is_snapshot, open_snapshot
 from xtc_index import read_xtc_index
 
 
@@ -193,7 +193,7 @@ def import_selected(params: dict[str, Any]) -> dict[str, Any]:
                     raise ValueError("Static structure conversion is limited to 32 MiB")
                 return convert_static({**args, "text": stream.read().decode("utf-8-sig")})
             raise ValueError("Unsupported import action")
-    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NONBLOCK), "rb") as stream:
+    with os.fdopen(os.open(path, binary_read_flags), "rb") as stream:
         info = os.fstat(stream.fileno())
         if not stat.S_ISREG(info.st_mode):
             raise ValueError("只能读取普通结构文件。")

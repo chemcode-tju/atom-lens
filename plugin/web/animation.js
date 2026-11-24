@@ -16,8 +16,9 @@ async function exportContext(prefix){
   const response=await request('tools/call',{name:'snapshot_context',arguments:fileRef?.token?{token:fileRef.token}:{}});
   if(response.isError||!response.structuredContent)throw Error('无法读取保存位置');
   const host=response.structuredContent,option=$(prefix+'-destination').querySelector('[value="server"]');
-  option.hidden=host.nativePicker||pickedFile;option.textContent='服务器 · '+host.host;
-  $(prefix+'-destination').value=host.nativePicker||pickedFile?'local':'server';
+  const local=host.nativePicker||host.desktopLocal||pickedFile;
+  option.hidden=local;option.textContent='服务器 · '+host.host;
+  $(prefix+'-destination').value=local?'local':'server';
   $(prefix+'-directory').value=pickedFile?'':host.directory;
   $(prefix+'-directory-row').hidden=$(prefix+'-destination').value!=='server';return host;
 }

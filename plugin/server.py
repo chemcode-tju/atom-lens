@@ -28,13 +28,13 @@ plugin_root = Path(__file__).resolve().parent
 
 
 def localization_js() -> str:
-    return (plugin_root / "web/i18n.js").read_text().replace(
-        "/*__LOCALES__*/{}", (plugin_root / "web/locales.json").read_text())
+    return (plugin_root / "web/i18n.js").read_text(encoding="utf-8").replace(
+        "/*__LOCALES__*/{}", (plugin_root / "web/locales.json").read_text(encoding="utf-8"))
 
 
 def widget_html() -> str:
     """Inline all assets: no CDN, HTTP server or filesystem access in the UI."""
-    html = (plugin_root / "web/index.html").read_text()
+    html = (plugin_root / "web/index.html").read_text(encoding="utf-8")
     for placeholder, filename in [
         ("/*__THEME_JS__*/", "theme.js"),
         ("/*__THEME_CSS__*/", "theme.css"),
@@ -67,7 +67,7 @@ def widget_html() -> str:
         ("/*__APP__*/", "app.js"),
         ("/*__ANIMATION__*/", "animation.js"),
     ]:
-        asset = (plugin_root / "web" / filename).read_text()
+        asset = (plugin_root / "web" / filename).read_text(encoding="utf-8")
         if filename == "ui-icons.svg":
             asset = asset.replace("<svg ", '<svg aria-hidden="true" style="display:none" ', 1)
         if filename == "i18n.js":

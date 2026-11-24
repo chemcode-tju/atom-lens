@@ -4,7 +4,6 @@ from __future__ import annotations
 # Configuration
 default_queue = "~/.local/share/structure-viewer/snapshot-queue.pyz"
 
-import fcntl
 import glob
 import io
 import json
@@ -32,7 +31,7 @@ def host_aliases(config: Path) -> list[str]:
         if path in visited or not path.is_file():
             return
         visited.add(path)
-        for line in path.read_text().splitlines():
+        for line in path.read_text(encoding="utf-8-sig", errors="replace").splitlines():
             if not re.match(r"^\s*(Host|Include)(?:\s|=)", line, re.IGNORECASE):
                 continue
             tokens = shlex.split(line, comments=True)
@@ -108,6 +107,8 @@ def read_profiles(path: Path) -> list[dict]:
 
 
 def update_profile(config: str, host: str, profile: dict | None) -> None:
+    import fcntl  # Only the macOS snapshot helper writes this profile store.
+
     path = settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     with (path.parent / "profiles.lock").open("a") as lock:

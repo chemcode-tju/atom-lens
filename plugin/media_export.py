@@ -106,7 +106,8 @@ class MediaExports:
                         "-threads", "2", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart"]
         log = (job["folder"] / "encoder.log").open("wb")
         try:
-            job["process"] = subprocess.Popen(command + [str(output)], stdout=subprocess.DEVNULL, stderr=log)
+            job["process"] = subprocess.Popen(command + [str(output)], stdout=subprocess.DEVNULL, stderr=log,
+                                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         finally:
             log.close()
         job["state"] = "encoding"

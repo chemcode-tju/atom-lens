@@ -1,7 +1,7 @@
 """Verify independent saved profiles and their HTTP boundary without any SSH calls."""
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from concurrent.futures import ThreadPoolExecutor
 import json
 import stat
@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / "native"))
-from desktop_profiles import ProfileStore
+from desktop_profiles import ProfileStore, valid_directory
 from desktop_host import DesktopHost
 from desktop_backend import RPCClient
 
@@ -29,12 +29,14 @@ class ProfileTests(unittest.TestCase):
 
     def test_multiple_profiles_survive_restart_and_edit_independently(self) -> None:
         first = self.store.save({"host": "nd3", "name": "实验室", "python": "/opt/env/bin/python3", "codex": True})
-        second = self.store.save({"host": "user@other", "config": "/tmp/other-config", "password": "must-not-store"})
+        config = self.path.parent / "other-config"
+        second = self.store.save({"host": "user@other", "config": str(config), "password": "must-not-store"})
         restarted = ProfileStore(self.path)
         self.assertEqual(restarted.list(), [first, second])
         edited = restarted.save({**first, "name": "实验室新名称", "python": "/other/python3"})
         self.assertEqual(self.store.list(), [edited, second])
-        self.assertEqual(stat.S_IMODE(self.path.stat().st_mode), 0o600)
+        if sys.platform != "win32":
+            self.assertEqual(stat.S_IMODE(self.path.stat().st_mode), 0o600)
         self.assertNotIn("password", self.path.read_text())
         self.assertNotIn("must-not-store", self.path.read_text())
 
@@ -111,12 +113,13 @@ class ProfileTests(unittest.TestCase):
     def test_opening_directories_survive_restart_per_host(self) -> None:
         nd3 = self.store.save({"host": "nd3"})
         nd2 = self.store.save({"host": "nd2"})
-        self.store.remember_directory(None, "/local/structures")
+        local = str(self.path.parent / "local" / "structures")
+        self.store.remember_directory(None, local)
         self.store.remember_directory(nd3, "/remote/project")
         self.store.remember_directory(nd2, "/remote/other")
         self.store.remember_directory(nd3, "/remote/archive/old")
         restarted = ProfileStore(self.path)
-        self.assertEqual(restarted.directory(None), "/local/structures")
+        self.assertEqual(restarted.directory(None), local)
         self.assertEqual(restarted.directory(nd2), "/remote/other")
         renamed = restarted.save({**nd3, "name": "Lab"})
         self.assertEqual(restarted.directory(renamed), "/remote/project")
@@ -124,7 +127,16 @@ class ProfileTests(unittest.TestCase):
         self.assertIsNone(restarted.directory(changed))
         restarted.remember_directory(renamed, "/remote/stale")
         self.assertIsNone(restarted.directory(renamed))
-        self.assertEqual(restarted.directory(None), "/local/structures")
+        self.assertEqual(restarted.directory(None), local)
+
+    def test_windows_local_paths_do_not_change_remote_path_rules(self) -> None:
+        with patch("desktop_profiles.Path", PureWindowsPath):
+            self.assertTrue(valid_directory(r"C:\Users\Public\水 模拟"))
+            self.assertTrue(valid_directory(r"\\server\share\models"))
+            self.assertFalse(valid_directory(r"C:relative"))
+            self.assertFalse(valid_directory(r"C:\project\archive\old"))
+            self.assertTrue(valid_directory("/remote/project", remote=True))
+            self.assertFalse(valid_directory(r"C:\remote\project", remote=True))
 
     def test_profile_http_changes_do_not_switch_the_active_connection(self) -> None:
         host = DesktopHost(self.path)

@@ -2,7 +2,7 @@
 
 [返回 README](../README.md)
 
-本阶段维护独立 macOS App、Codex 侧栏插件与 Linux 远程后端，共用一个仓库和核心实现；没有 Windows 版。独立 App 当前为未发布预览。`tests/preview_host.py` 仍仅用于协议与界面开发。
+macOS 与 Windows 独立 App、Codex 侧栏插件和 Linux 远程后端共用核心实现。`tests/preview_host.py` 用于协议与界面开发。
 
 | 路径 | 用途 |
 | --- | --- |
@@ -11,6 +11,7 @@
 | `native/desktop_host.py` / `desktop_backend.py` / `desktop_worker.py` | 私有回环宿主、持久 STDIO/SSH 会话与桌面后端接口 |
 | `native/remote_bootstrap.py` | 校验并安装服务器后端，可选注册远程 Codex 插件 |
 | `native/Installer.m` / `packaging/build_macos.py` | 可选本地插件安装器与内置运行环境的 DMG 构建 |
+| `native/windows/` / `packaging/build_windows.py` | Windows 原生文件面板与窗口宿主，以及带运行时的 NSIS 安装包构建 |
 | `plugin/` | MCP 服务、格式解析、导出和 WebGL 界面；由 Codex 安装缓存加载 |
 | `.agents/plugins/marketplace.json` | 仓库市场清单 |
 | `native/` | 可选的 Mac 保存助手与 SSH 导出队列连接 |
@@ -36,4 +37,14 @@ for test in tests/test_*.cjs; do node "$test" || exit 1; done
 
 正式发布前，在 Mac 新聊天验证：本地 XYZ/POSCAR、侧栏入口、保存／取消；在目标 Linux 远程聊天验证：主文件及配套文件、随机切帧、导出到服务器、可选助手导出到 Mac。缺少实际 Linux 环境时应明确标注未验收。
 
-0.13.3 当前为未发布草案。Mac DMG 的打包和公开分发边界见[打包说明](macos-release.md)。README 功能介绍由维护者审阅后再发布。不要把本地草案自动推送或创建 Release。
+Mac DMG 的构建见 [macOS 打包说明](macos-release.md)。
+
+## Windows 打包
+
+构建需要 Python 3.11+ 和 NSIS 3（`makensis` 在 PATH 中）。在 macOS 上可用 `brew install makensis` 安装。在仓库根目录运行：
+
+```sh
+python packaging/build_windows.py
+```
+
+脚本校验并缓存 Windows x64 Electron 和 Python，输出到 `dist/windows-x64/`。安装程序在当前用户的 `%LOCALAPPDATA%\Programs\Atom Lens` 安装应用，并添加开始菜单快捷方式和卸载入口。

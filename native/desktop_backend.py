@@ -16,6 +16,7 @@ import os
 import queue
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -24,6 +25,7 @@ import uuid
 import zipfile
 
 root = Path(__file__).resolve().parents[1]
+hidden_console = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 sys.path.insert(0, str(root / "plugin"))
 from snapshot import save_file
 from trajectory import is_trajectory_index
@@ -39,8 +41,15 @@ def ssh_command(profile: dict[str, Any]) -> list[str]:
         raise ValueError("SSH 配置文件须使用绝对路径")
     if not config.is_file() and config != Path.home() / ".ssh/config":
         raise ValueError("找不到所选 SSH 配置文件")
-    return ["/usr/bin/ssh", "-F", str(config) if config.is_file() else "/dev/null",
-            "-o", "BatchMode=yes", "-o", "ConnectTimeout=12", "-o", "ServerAliveInterval=15",
+    if sys.platform == "win32":
+        ssh = shutil.which("ssh.exe")
+        if not ssh:
+            raise ValueError("未找到 Windows OpenSSH 客户端")
+        options = ["-F", str(config)] if config.is_file() else []
+    else:
+        ssh = "/usr/bin/ssh"
+        options = ["-F", str(config) if config.is_file() else "/dev/null"]
+    return [ssh, *options, "-o", "BatchMode=yes", "-o", "ConnectTimeout=12", "-o", "ServerAliveInterval=15",
             "-o", "ServerAliveCountMax=2", "-o", "ClearAllForwardings=yes", "--", host]
 
 
@@ -72,11 +81,12 @@ def bootstrap(profile: dict[str, Any], install: bool = False, codex: bool = Fals
     if install:
         payload = runtime_bundle()
         request.update(bundle=base64.b64encode(payload).decode("ascii"), sha256=hashlib.sha256(payload).hexdigest())
-    program = (root / "native/remote_bootstrap.py").read_text()
-    command = shlex.join([remote_python(profile), "-B", "-c", program])
+    program = (root / "native/remote_bootstrap.py").read_text(encoding="utf-8")
+    command = shlex.join([remote_python(profile), "-X", "utf8", "-B", "-c", program])
     try:
         result = subprocess.run([*ssh_command(profile), command], input=json.dumps(request),
-                                text=True, capture_output=True, timeout=timeout)
+                                encoding="utf-8", errors="replace", capture_output=True, timeout=timeout,
+                                creationflags=hidden_console)
     except subprocess.TimeoutExpired as error:
         raise RuntimeError("服务器连接超时") from error
     if result.returncode:
@@ -99,7 +109,8 @@ class RPCClient:
         environment.pop("PYTHONHOME", None)
         environment.pop("PYTHONPATH", None)
         self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                        stderr=subprocess.PIPE, text=True, encoding="utf-8", env=environment)
+                                        stderr=subprocess.PIPE, text=True, encoding="utf-8", env=environment,
+                                        creationflags=hidden_console)
         self.replies: dict[int, queue.Queue] = {}
         self.errors: deque[str] = deque(maxlen=20)
         self.foreground = threading.Lock()
@@ -223,7 +234,7 @@ class DesktopSessions:
             if not result["version"]:
                 raise ValueError("服务器尚未安装 Atom Lens 后端，请先点击“安装／更新”")
             program = "from pathlib import Path; import runpy; runpy.run_path(str(Path.home()/'.local/share/atom-lens/backend/native/desktop_worker.py'), run_name='__main__')"
-            command = [*ssh_command(profile), shlex.join([result["python"], "-B", "-u", "-c", program])]
+            command = [*ssh_command(profile), shlex.join([result["python"], "-X", "utf8", "-B", "-u", "-c", program])]
         else:
             command = [sys.executable, "-B", "-u", str(root / "native/desktop_worker.py")]
         candidate = RPCClient(command)
@@ -239,7 +250,8 @@ class DesktopSessions:
             self.identifier = identifier
             self.connections[identifier] = {
                 "session": identifier, "client": candidate, "key": key,
-                "host": profile["host"] if remote else "本地 Mac", "remote": remote,
+                "host": profile["host"] if remote else ("本地 Windows" if sys.platform == "win32" else "本地 Mac"),
+                "remote": remote,
                 "profile": dict(profile) if remote else None,
                 "concurrentIndex": capabilities.get("atomLensConcurrentIndex") is True,
             }
@@ -266,7 +278,7 @@ class DesktopSessions:
             with self.lock:
                 item = self.connections.get(identifier)
                 if item and not item["remote"]:
-                    raise ValueError("本地 Mac 会话无需断开")
+                    raise ValueError("本地会话无需断开")
                 if item:
                     del self.connections[identifier]
                     if self.identifier == identifier:
@@ -295,16 +307,17 @@ class DesktopSessions:
         if method == "tools/call" and params.get("name") == "structure_media_export":
             arguments = params.get("arguments", {})
             if arguments.get("action") == "save" and arguments.get("destination") == "native":
-                return {"structuredContent": self.save_to_mac(arguments, client), "content": []}
+                return {"structuredContent": self.save_to_desktop(arguments, client), "content": []}
         result = client.call(method, params)
         if method == "tools/call" and params.get("name") == "snapshot_context":
             result["structuredContent"]["desktopPicker"] = True
+            result["structuredContent"]["desktopLocal"] = not connection["remote"]
         return result
 
-    def save_to_mac(self, arguments: dict[str, Any], client: RPCClient) -> dict[str, Any]:
+    def save_to_desktop(self, arguments: dict[str, Any], client: RPCClient) -> dict[str, Any]:
         directory = arguments.get("directory", "")
         if not directory or not Path(directory).is_absolute():
-            raise ValueError("请先选择 Mac 上的保存目录")
+            raise ValueError("请先选择本机上的保存目录")
         with tempfile.TemporaryDirectory(prefix="atomlens-export-") as temporary:
             part = client.call("atomlens/export-read", {"id": arguments["id"], "offset": 0})
             from snapshot import validate_name
