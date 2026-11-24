@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <strong>English</strong> | <a href="README.zh-CN.md">简体中文</a> · <a href="https://liyang-tju.github.io/atom-lens/">Interactive Feature Gallery ↗</a>
+  <strong>English</strong> | <a href="README.zh-CN.md">简体中文</a> · <a href="https://chemcode-tju.github.io/atom-lens/">Interactive Feature Gallery ↗</a>
 </p>
 
 <p align="center">
@@ -66,7 +66,7 @@
 
 ### macOS App (Apple Silicon, macOS 12+)
 
-1. Download the `.dmg` installer from [GitHub Releases](https://github.com/liyang-tju/atom-lens/releases).
+1. Download the `.dmg` installer from [GitHub Releases](https://github.com/chemcode-tju/atom-lens/releases).
 2. Open the DMG and drag **Atom Lens** into **Applications**.
 3. Launch **Atom Lens** from Applications, then click **Open Local…** (or try [examples/water.xyz](examples/water.xyz)).
 4. *(Optional)* To use Atom Lens in Codex chat, open **Codex Plugin → Install to Codex** inside the app and reopen your chat.
@@ -95,7 +95,7 @@ See [build instructions](docs/development.md#windows-打包) for producing the u
 ### From Source (Optional / Server CLI)
 
 ```sh
-git clone https://github.com/liyang-tju/atom-lens.git
+git clone https://github.com/chemcode-tju/atom-lens.git
 cd atom-lens
 python3 install.py
 ```

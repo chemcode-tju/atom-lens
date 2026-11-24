@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> | <strong>简体中文</strong> · <a href="https://liyang-tju.github.io/atom-lens/?lang=zh">交互式功能轮播预览 ↗</a>
+  <a href="README.md">English</a> | <strong>简体中文</strong> · <a href="https://chemcode-tju.github.io/atom-lens/?lang=zh">交互式功能轮播预览 ↗</a>
 </p>
 
 <p align="center">
@@ -66,7 +66,7 @@
 
 ### macOS 独立 App（Apple Silicon，macOS 12+）
 
-1. 从 [GitHub Releases](https://github.com/liyang-tju/atom-lens/releases) 下载 `.dmg` 安装包。
+1. 从 [GitHub Releases](https://github.com/chemcode-tju/atom-lens/releases) 下载 `.dmg` 安装包。
 2. 双击打开 DMG，将 **Atom Lens** 拖入 **Applications**。
 3. 从 Applications 启动 **Atom Lens**，点击 **“打开本地…”** 打开结构文件（可先用 [examples/water.xyz](examples/water.xyz) 体验）。
 4. *（可选）* 如需在 Codex 聊天侧栏使用，在 App 内点击 **“Codex 插件” → “安装到 Codex”**，完成后重新打开聊天即可。
@@ -95,7 +95,7 @@
 ### 源码安装（可选／服务器命令行）
 
 ```sh
-git clone https://github.com/liyang-tju/atom-lens.git
+git clone https://github.com/chemcode-tju/atom-lens.git
 cd atom-lens
 python3 install.py
 ```
